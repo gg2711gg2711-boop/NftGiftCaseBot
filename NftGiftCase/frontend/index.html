@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#171927" />
+  <meta name="description" content="NftGiftCase — подарочные кейсы, апгрейдер и коллекция цифровых предметов." />
+  <title>NftGiftCase</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-name">NftGiftCase</div>
+      <div class="topbar-actions">
+        <button class="icon-btn small" id="sound-toggle" aria-label="Переключить звук" title="Звук">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z"/><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10"/></svg>
+        </button>
+        <button class="icon-btn small" id="more-btn" aria-label="Дополнительно"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></button>
+      </div>
+    </header>
+
+    <div class="brand-row">
+      <div class="brand-mark" role="img" aria-label="NftGiftCase">
+        <span class="brand-nft">Nft</span><span class="brand-gift">Gift</span><span class="brand-case">Case</span>
+        <span class="brand-underline"></span>
+      </div>
+      <div class="brand-tools">
+        <button id="balance-pill" class="balance-pill" title="Баланс приложения">
+          <svg class="star-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.8 2.8 5.7 6.3.9-4.55 4.43 1.08 6.27L12 17.15l-5.63 2.95 1.08-6.27L2.9 9.4l6.3-.9L12 2.8Z"/></svg>
+          <strong id="balance-value">0</strong><svg class="chevron tiny" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <button id="topup-btn" class="primary-btn topup-btn">Пополнить</button>
+        <button id="profile-btn" class="avatar-btn" aria-label="Профиль">A<span class="online-dot"></span></button>
+      </div>
+    </div>
+
+    <section class="live-strip" aria-label="Последние выигрыши">
+      <span class="live-dot"></span><span class="live-label">LIVE</span>
+      <div class="live-window"><div id="live-feed" class="live-feed"><span class="live-placeholder">Недавние выигрыши появятся здесь</span></div></div>
+    </section>
+
+    <main id="main-content">
+      <section id="home-view" class="view active-view">
+        <div class="filters-row">
+          <button class="icon-btn search-btn" id="search-toggle" aria-label="Поиск"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.7"/><path d="m16 16 4.2 4.2"/></svg></button>
+          <button class="filter-chip selected" data-filter="all">Все</button>
+          <button class="filter-chip" data-filter="free">Бесплатные</button>
+          <button class="filter-chip" data-filter="gift">Подарки</button>
+          <button class="icon-btn sort-btn" id="sort-btn" aria-label="Сортировка"><svg viewBox="0 0 24 24"><path d="M8 4v15m0 0-4-4m4 4 4-4M16 20V5m0 0-4 4m4-4 4 4"/></svg></button>
+        </div>
+        <div id="search-box" class="search-box hidden"><input id="search-input" type="search" placeholder="Название кейса или предмета" /><button id="search-close" class="text-btn">Закрыть</button></div>
+
+        <div class="section-heading"><h1>Бесплатные</h1><button class="text-btn" data-jump="inventory">Мои предметы <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
+        <div id="free-grid" class="case-grid"></div>
+
+        <div class="section-heading section-heading-spaced"><h2>Кейсы</h2><button class="text-btn" data-jump="cases">Все кейсы <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
+        <div id="case-grid" class="case-grid"></div>
+
+        <div class="panel promo-panel">
+          <div class="promo-copy"><span class="eyebrow">БОНУСЫ</span><h3>Есть промокод?</h3><p>Активируйте код и получите бонус к коллекции.</p></div>
+          <div class="promo-form"><input id="promo-input" maxlength="32" placeholder="Введите код" /><button id="promo-redeem" class="small-primary">Применить</button></div>
+        </div>
+        <div class="panel referral-panel"><div><span class="eyebrow">REFERRAL PROGRAM</span><h3>Пригласите друга</h3><p>Получайте процент от его покупок в виде внутренних кредитов приложения.</p></div><button id="referral-share" class="small-primary">Пригласить</button></div>
+      </section>
+
+      <section id="case-view" class="view">
+        <div class="page-title-row"><button class="back-btn" data-back="home"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button><div><p class="eyebrow">КОЛЛЕКЦИЯ</p><h1 id="case-title">NFT-кейс</h1></div><button class="icon-btn" data-jump="inventory" aria-label="Инвентарь"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4.5 7.7 7.5 4.4 7.5-4.4M12 12v9"/></svg></button></div>
+        <div id="case-stage" class="case-stage">
+          <div class="stage-glow"></div>
+          <div id="roulette-track" class="roulette-track"></div>
+          <div class="roulette-marker"></div>
+        </div>
+        <div class="case-meta"><span id="case-subtitle">Предметы, которые могут выпасть</span><span id="case-price" class="price-badge"></span></div>
+        <div class="quantity-row" id="quantity-row" aria-label="Количество прокрутов">
+          <button class="qty-chip active" data-qty="1">x1</button><button class="qty-chip" data-qty="2">x2</button><button class="qty-chip" data-qty="3">x3</button><button class="qty-chip" data-qty="4">x4</button><button class="qty-chip" data-qty="5">x5</button>
+        </div>
+        <button id="open-case-btn" class="primary-btn wide-btn">Открыть за 39 Stars</button>
+        <p class="legal-note">Оплата проходит через официальный интерфейс Telegram Stars. Выпадение предмета определяется на сервере.</p>
+        <div class="section-heading section-heading-spaced"><h2>Что может выпасть</h2><button class="text-btn" id="odds-toggle">Шансы</button></div>
+        <div id="odds-list" class="drop-grid"></div>
+      </section>
+
+      <section id="upgrade-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">УЛУЧШЕНИЕ ПРЕДМЕТОВ</p><h1>Апгрейдер</h1></div><button class="icon-btn" id="upgrade-info" aria-label="Как работает апгрейд"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg></button></div>
+        <div class="upgrade-layout">
+          <div class="wheel-panel">
+            <div class="wheel-wrap" id="wheel-wrap">
+              <svg class="upgrade-wheel" id="upgrade-wheel" viewBox="0 0 360 360" role="img" aria-label="Круг шанса апгрейда">
+                <defs><radialGradient id="wheelFill"><stop offset="0" stop-color="#2b3150"/><stop offset="1" stop-color="#171c31"/></radialGradient><linearGradient id="wheelEdge"><stop stop-color="#646b87"/><stop offset="1" stop-color="#252b42"/></linearGradient></defs>
+                <circle cx="180" cy="180" r="157" fill="#171b2c" stroke="#303750" stroke-width="14" />
+                <circle cx="180" cy="180" r="142" fill="none" stroke="url(#wheelEdge)" stroke-width="23" />
+                <circle cx="180" cy="180" r="142" fill="none" stroke="#8a80ff" stroke-width="23" stroke-dasharray="18 875" transform="rotate(-90 180 180)" id="chance-sector" stroke-linecap="round" />
+                <circle cx="180" cy="180" r="122" fill="url(#wheelFill)" stroke="#0e1220" stroke-width="7" />
+                <g id="wheel-ticks" stroke="#a8afc8" stroke-width="2" opacity=".55"></g>
+                <g id="wheel-center-art"><image id="wheel-item-image" href="./assets/rifle.png" x="95" y="95" width="170" height="170" preserveAspectRatio="xMidYMid meet" /></g>
+              </svg>
+              <div class="wheel-pointer"></div>
+              <div class="wheel-chance" id="wheel-chance">12.5%</div>
+            </div>
+            <div id="upgrade-result" class="upgrade-result">Выберите предмет для апгрейда</div>
+          </div>
+          <div class="upgrade-controls panel">
+            <div class="control-label">Ваша ставка</div>
+            <button id="upgrade-bet-card" class="bet-card"><span class="balance-orb">★</span><span><small>С баланса</small><strong id="upgrade-bet-value">5 кредитов</strong></span><svg viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+            <div class="control-label control-label-row"><span>Хочу получить</span><button id="target-select-btn" class="text-btn">Выбрать</button></div>
+            <button id="target-card" class="target-card"><img id="target-image" src="./assets/ring.png" alt="Целевой предмет"/><span><strong id="target-title">Blue Ring</strong><small id="target-value">Стоимость 190</small></span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+            <div class="multiplier-row"><button data-mult="2" class="multiplier-chip active">x2</button><button data-mult="4" class="multiplier-chip">x4</button><button data-mult="8" class="multiplier-chip">x8</button></div>
+            <div class="chance-range"><div class="chance-track"><span id="chance-bar"></span></div><span id="chance-label">Шанс 12.5%</span></div>
+            <div class="bet-input-row"><label for="bet-range">Ставка с баланса</label><strong id="bet-range-label">5</strong></div>
+            <input type="range" id="bet-range" min="1" max="100" value="5" />
+            <button class="primary-btn wide-btn" id="upgrade-btn">Улучшить</button>
+            <p class="muted-note">Шанс рассчитывается сервером по стоимости ставки и целевого предмета. Показанный шанс округлён.</p>
+          </div>
+        </div>
+        <div class="section-heading section-heading-spaced"><h2>Мои предметы</h2><button class="text-btn" data-jump="inventory">Все <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
+        <div id="upgrade-inventory" class="horizontal-items"></div>
+      </section>
+
+      <section id="inventory-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">КОЛЛЕКЦИЯ</p><h1>Мои предметы</h1></div><span class="count-badge" id="inventory-count">0</span></div>
+        <div id="inventory-grid" class="inventory-grid"></div>
+        <div id="inventory-empty" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="M4.5 7.7 12 12l7.5-4.3"/></svg></div><h3>Пока пусто</h3><p>Откройте кейс, чтобы получить первый предмет.</p><button class="primary-btn" data-jump="cases">Перейти к кейсам</button></div>
+      </section>
+
+      <section id="event-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">СЕЗОННЫЕ НАГРАДЫ</p><h1 id="event-title">Event Soon</h1></div><span class="event-status" id="event-status">СКОРО</span></div>
+        <div id="event-soon" class="panel event-soon"><div class="event-art"><img src="./assets/nft-swan.png" alt="Коллекционный подарок" /></div><h2>Следующий ивент скоро</h2><p>Заглядывайте сюда, чтобы получить сезонные награды и редкие предметы.</p></div>
+        <div id="battle-pass-content" class="hidden">
+          <div class="panel pass-hero"><div><span class="eyebrow">BATTLE PASS</span><h2 id="pass-name">Halloween Pass</h2><p>30 уровней · FREE + PREMIUM</p></div><img src="./assets/perfume.png" alt="Premium предмет" /><div class="pass-xp"><strong id="pass-xp-value">0 XP</strong><span id="pass-xp-label">До следующего уровня</span></div></div>
+          <div class="pass-tabs"><button class="selected" data-event-tab="pass">Пропуск</button><button data-event-tab="quests">Quests</button></div>
+          <div id="pass-levels" class="pass-levels"></div>
+          <div id="quests-list" class="quest-list hidden"></div>
+          <button id="premium-pass-btn" class="primary-btn wide-btn">Открыть Premium за 666 Stars</button>
+        </div>
+        <div id="advent-content" class="hidden"><div class="panel advent-hero"><h2>Адвент-календарь</h2><p>Открывайте ячейки каждый день в течение события.</p></div><div id="advent-grid" class="advent-grid"></div></div>
+      </section>
+
+      <section id="battles-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">PLAYER VS PLAYER</p><h1>Битва кейсов</h1></div><button id="create-battle-btn" class="primary-btn">Создать</button></div>
+        <div class="panel battle-info"><p>Два игрока открывают одинаковый кейс. Победитель получает оба выпавших предмета и банк внутренних кредитов.</p><span class="muted-note">Вход оплачивается внутренним балансом приложения, а не прямым переводом Telegram Stars.</span></div>
+        <div id="battles-list" class="battle-list"></div>
+      </section>
+
+      <section id="admin-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">PRIVATE TOOLS</p><h1>Админ-панель</h1></div><span class="admin-badge">ADMIN</span></div>
+        <div class="panel admin-panel">
+          <h2>Баланс пользователя</h2><div class="form-grid"><label>Telegram ID<input id="admin-user-id" value="1080484217" inputmode="numeric" /></label><label>Сумма<input id="admin-balance-amount" type="number" min="1" value="50" /></label></div><div class="button-row"><button id="admin-credit-btn" class="small-primary">Начислить</button><button id="admin-debit-btn" class="secondary-btn">Списать</button></div>
+        </div>
+        <div class="panel admin-panel"><h2>Управление кейсами</h2><label>Кейс<select id="admin-case-select"></select></label><div class="form-grid"><label>Цена, XTR<input id="admin-case-price" type="number" min="0" /></label><label>Лимит открытий<input id="admin-case-limit" type="number" min="0" placeholder="Без лимита" /></label></div><label class="toggle-row"><span>Кейс активен</span><input id="admin-case-active" type="checkbox" checked /></label><div id="admin-case-weights" class="admin-weights"></div><button id="admin-case-save" class="small-primary">Сохранить кейс</button><p class="muted-note">Шансы редактируются весами предметов через защищённый API; сумма весов не обязана равняться 100.</p></div>
+        <div class="panel admin-panel"><h2>Промокоды</h2><label>Код<input id="admin-promo-code" placeholder="HALLOWEEN" maxlength="32" /></label><div class="form-grid"><label>Награда<select id="admin-promo-kind"><option value="balance">Кредиты баланса</option><option value="spins">Бесплатные прокруты</option></select></label><label>Количество<input id="admin-promo-amount" type="number" min="1" value="50" /></label></div><div class="form-grid"><label>Лимит применений<input id="admin-promo-max" type="number" min="1" placeholder="Без лимита" /></label><label>Дата окончания<input id="admin-promo-expiry" type="datetime-local" /></label></div><button id="admin-promo-create" class="small-primary">Создать промокод</button></div>
+        <div class="panel admin-panel"><h2>Event Manager</h2><label class="toggle-row"><span>Включить событие</span><input type="checkbox" id="admin-event-enabled" /></label><label>Тип события<select id="admin-event-type"><option value="battle_pass">Battle Pass — Halloween Pass</option><option value="advent">Адвент-календарь</option></select></label><label>Название<input id="admin-event-title" value="Halloween Pass" /></label><label>Окончание события<input id="admin-event-end" type="datetime-local" /></label><label>Premium Pass, XTR<input id="admin-event-price" type="number" min="1" value="666" /></label><button id="admin-event-save" class="small-primary">Сохранить событие</button></div>
+        <div class="panel admin-panel"><h2>Последние заказы</h2><div id="admin-orders" class="admin-list muted-note">Данные загрузятся после входа администратора.</div></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Главное меню">
+      <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 10 12 3l8 7v10H4V10Z"/><path d="M9 20v-6h6v6"/></svg></span><span>Игры</span></button>
+      <button class="nav-item" data-view="cases"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4.5 7.7 7.5 4.4 7.5-4.4M12 12v9"/></svg></span><span>Кейсы</span></button>
+      <button class="nav-item" data-view="upgrade"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2 2.8 2.8m0-12.8-2.8 2.8m-7.2 7.2-2.8 2.8"/><circle cx="12" cy="12" r="5"/></svg></span><span>Апгрейд</span></button>
+      <button class="nav-item event-nav" data-view="event"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M5 4h14v17H5zM8 2v4m8-4v4M8 10h8m-8 4h5"/></svg></span><span id="event-nav-label">Event Soon</span></button>
+      <button class="nav-item optional-nav" data-view="battles"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="m5 4 4 1 3-2 3 2 4-1-1 5-6 3-6-3-1-5Z"/><path d="m8 12-3 8 7-3 7 3-3-8"/></svg></span><span>Битвы</span></button>
+    </nav>
+    <footer class="app-footer">@NftGiftCase <span id="admin-shortcut-wrap" class="hidden">· <button id="admin-shortcut" class="text-btn">Admin</button></span></footer>
+  </div>
+
+  <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close icon-btn" data-close-modal aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button><div id="modal-content"></div></div></div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+  <script src="./config.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>

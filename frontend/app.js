@@ -132,16 +132,31 @@
   }
 
   async function loadAll() {
-    if (MOCK) {
-      initMock(); renderAll();
-      showDemoNotice();
-      return;
-    }
-    if (tg) {
-      tg.ready(); tg.expand();
-      try { tg.setHeaderColor('#171a29'); tg.setBackgroundColor('#0f1016'); tg.setBottomBarColor('#171a29'); } catch { /* old Telegram client */ }
-    }
+  // Сообщаем Telegram, что интерфейс готов к показу.
+  if (tg) {
     try {
+      tg.ready();
+      tg.expand();
+
+      try {
+        tg.setHeaderColor('#171a29');
+        tg.setBackgroundColor('#0f1016');
+        tg.setBottomBarColor('#171a29');
+      } catch (_) {}
+    } catch (err) {
+      console.warn('Telegram WebApp init failed', err);
+    }
+  }
+
+  // Деморежим проверяется только после инициализации Telegram.
+  if (MOCK) {
+    initMock();
+    renderAll();
+    showDemoNotice();
+    return;
+  }
+
+  try {
       const [config, me, cases, wins, inventory, event] = await Promise.all([
         api('/api/config'), api('/api/me'), api('/api/cases'), api('/api/live-wins'), api('/api/inventory'), api('/api/event')
       ]);

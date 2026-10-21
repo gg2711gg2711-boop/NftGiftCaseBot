@@ -165,7 +165,34 @@
         <div class="panel admin-panel">
           <h2>Баланс пользователя</h2><div class="form-grid"><label>Telegram ID<input id="admin-user-id" value="1080484217" inputmode="numeric" /></label><label>Сумма<input id="admin-balance-amount" type="number" min="1" value="50" /></label></div><div class="button-row"><button id="admin-credit-btn" class="small-primary">Начислить</button><button id="admin-debit-btn" class="secondary-btn">Списать</button></div>
         </div>
-        <div class="panel admin-panel"><h2>Управление кейсами</h2><label>Кейс<select id="admin-case-select"></select></label><div class="form-grid"><label>Цена, XTR<input id="admin-case-price" type="number" min="0" /></label><label>Лимит открытий<input id="admin-case-limit" type="number" min="0" placeholder="Без лимита" /></label></div><label class="toggle-row"><span>Кейс активен</span><input id="admin-case-active" type="checkbox" checked /></label><div id="admin-case-weights" class="admin-weights"></div><button id="admin-case-save" class="small-primary">Сохранить кейс</button><p class="muted-note">Шансы редактируются весами предметов через защищённый API; сумма весов не обязана равняться 100.</p></div>
+        <div class="panel admin-panel case-builder-panel">
+          <h2>Создать кейс</h2>
+          <p class="muted-note">Создай кейс, выбери обложку и задай цену. Новый кейс появится для игроков после добавления подарков и включения переключателя «Кейс активен».</p>
+          <label>Название кейса<input id="admin-new-case-title" maxlength="48" placeholder="Например, Rich Case" /></label>
+          <div class="form-grid"><label>Обложка<select id="admin-new-case-image"><option value="case-rich.png">Rich Case</option><option value="case-durov.png">Durov Case</option><option value="case-march-8.png">8 March Case</option><option value="case-halloween.png">Halloween Case</option><option value="case-daily.png">Daily Case</option></select></label><label>Цена открытия, Stars<input id="admin-new-case-price" type="number" min="1" value="39" /></label></div>
+          <label>Описание<input id="admin-new-case-description" maxlength="180" placeholder="Короткое описание кейса" /></label>
+          <label>Общий лимит открытий<input id="admin-new-case-limit" type="number" min="1" placeholder="Пусто — без лимита" /></label>
+          <button id="admin-create-case" class="small-primary">＋ Создать кейс</button>
+        </div>
+        <div class="panel admin-panel case-builder-panel">
+          <h2>Настройки кейса</h2>
+          <label>Кейс<select id="admin-case-select"></select></label>
+          <label>Название<input id="admin-case-title" maxlength="48" /></label>
+          <div class="form-grid"><label>Обложка<select id="admin-case-image"><option value="case-rich.png">Rich Case</option><option value="case-durov.png">Durov Case</option><option value="case-march-8.png">8 March Case</option><option value="case-halloween.png">Halloween Case</option><option value="case-daily.png">Daily Case</option><option value="gift-box.png">Подарок дня</option><option value="nft-swan.png">NFT Swan</option></select></label><label>Цена открытия, Stars<input id="admin-case-price" type="number" min="1" value="39" /></label></div>
+          <label>Описание<input id="admin-case-description" maxlength="180" /></label>
+          <label>Общий лимит открытий<input id="admin-case-limit" type="number" min="1" placeholder="Пусто — без лимита" /></label>
+          <label class="toggle-row"><span>Кейс активен</span><input id="admin-case-active" type="checkbox" /></label>
+          <div id="admin-case-weights" class="admin-weights"></div>
+          <button id="admin-case-save" class="small-primary">Сохранить настройки кейса</button>
+          <p class="muted-note">Шансы вводятся в процентах. Если сумма не равна 100%, backend нормализует значения пропорционально. Количество — ограниченный запас этого предмета; оставь пустым для бесконечного запаса.</p>
+        </div>
+        <div class="panel admin-panel case-builder-panel">
+          <h2>Добавить подарок в выбранный кейс</h2>
+          <label>Подарок / NFT из каталога<select id="admin-gift-select"></select></label>
+          <div class="form-grid"><label>Стоимость предмета, Stars<input id="admin-item-price" type="number" min="0" value="10" /></label><label>Шанс выпадения, %<input id="admin-item-chance" type="number" min="0.01" max="100" step="0.01" value="10" /></label></div>
+          <label>Количество этого предмета<input id="admin-item-stock" type="number" min="1" placeholder="Пусто — без лимита" /></label>
+          <button id="admin-add-item" class="small-primary">Добавить предмет в кейс</button>
+        </div>
         <div class="panel admin-panel"><h2>Промокоды</h2><label>Код<input id="admin-promo-code" placeholder="HALLOWEEN" maxlength="32" /></label><div class="form-grid"><label>Награда<select id="admin-promo-kind"><option value="balance">Кредиты баланса</option><option value="spins">Бесплатные прокруты</option></select></label><label>Количество<input id="admin-promo-amount" type="number" min="1" value="50" /></label></div><div class="form-grid"><label>Лимит применений<input id="admin-promo-max" type="number" min="1" placeholder="Без лимита" /></label><label>Дата окончания<input id="admin-promo-expiry" type="datetime-local" /></label></div><button id="admin-promo-create" class="small-primary">Создать промокод</button></div>
         <div class="panel admin-panel"><h2>Event Manager</h2><label class="toggle-row"><span>Включить событие</span><input type="checkbox" id="admin-event-enabled" /></label><label>Тип события<select id="admin-event-type"><option value="battle_pass">Battle Pass — Halloween Pass</option><option value="advent">Адвент-календарь</option></select></label><label>Название<input id="admin-event-title" value="Halloween Pass" /></label><label>Окончание события<input id="admin-event-end" type="datetime-local" /></label><label>Premium Pass, XTR<input id="admin-event-price" type="number" min="1" value="666" /></label><button id="admin-event-save" class="small-primary">Сохранить событие</button></div>
         <div class="panel admin-panel"><h2>Последние заказы</h2><div id="admin-orders" class="admin-list muted-note">Данные загрузятся после входа администратора.</div></div>

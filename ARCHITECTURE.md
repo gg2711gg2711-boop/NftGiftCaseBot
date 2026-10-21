@@ -34,7 +34,7 @@ Telegram client
 - `frontend/config.js` — `window.NGC_CONFIG = { apiBase, mockMode }`.
 - `backend/app.js` — Express application; D1 helper functions; auth; Bot API calls; route handlers.
 - `backend/worker.js` — Workers entrypoint. Uses Express with Wrangler's Node compatibility layer.
-- `db/0001_initial.sql` — idempotent bootstrap and seeded demo cases/items.
+- `db/0001_initial.sql` — schema + system seed data; `db/0002_case_builder.sql` — five owner-managed case drafts and hides retired sample crates.
 - `scripts/setup-telegram.mjs` — `setWebhook`, `setChatMenuButton`, `/start`, `/help`, `/paysupport` commands.
 
 ## 3. Main API
@@ -64,7 +64,10 @@ All endpoints under `/api` except health and Telegram webhook require validated 
 | POST | `/api/battles/:battleId/join` | Join and resolve a 2-player match |
 | GET | `/api/admin/overview` | Admin dashboard data |
 | POST | `/api/admin/balance` | Add/remove internal app credits |
-| PATCH | `/api/admin/cases/:caseId` | Price, active status, open limit and item weights |
+| POST | `/api/admin/cases` | Create a custom case draft |
+| POST | `/api/admin/cases/:caseId/items` | Add a catalog gift/NFT to a case with price, chance and stock |
+| PATCH | `/api/admin/cases/:caseId` | Edit title, cover, price, active status, case limit, per-item chance/value/stock |
+| DELETE | `/api/admin/cases/:caseId/items/:itemId` | Remove a drop from future rolls while retaining inventory references |
 | POST | `/api/admin/promocodes` | Create balance/spin promo |
 | PATCH | `/api/admin/promocodes/:code` | Enable/disable promo |
 | PATCH | `/api/admin/event` | Toggle event, type, title, end time and Premium price |

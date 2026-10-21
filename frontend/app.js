@@ -26,14 +26,20 @@
       { id: 'nft-ring-item', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 140, weight: 16 },
       { id: 'nft-rocket-item', title: 'Rocket', image_url: 'rocket.png', kind: 'gift', value_stars: 390, weight: 4 },
     ]},
-    { id: 'crate-blue', title: 'Сапфировый кейс', description: 'Сбалансированная подборка предметов', image_url: 'case-blue.png', price_xtr: 79, is_free: 0, active: 1, items: [
-      { id: 'blue-rocket', title: 'Rocket', image_url: 'rocket.png', kind: 'gift', value_stars: 25, weight: 48 }, { id: 'blue-rifle', title: 'Carbon Rifle', image_url: 'rifle.png', kind: 'skin', value_stars: 90, weight: 30 }, { id: 'blue-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 190, weight: 17 }, { id: 'blue-perfume', title: 'Perfume Bottle', image_url: 'perfume.png', kind: 'gift', value_stars: 430, weight: 5 }
+    { id: 'rich-case', title: 'Rich Case', description: 'Золотая коллекция предметов', image_url: 'case-rich.png', price_xtr: 39, is_free: 0, active: 1, items: [
+      { id: 'rich-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 190, weight: 60 }, { id: 'rich-perfume', title: 'Perfume Bottle', image_url: 'perfume.png', kind: 'gift', value_stars: 430, weight: 30 }, { id: 'rich-swan', title: 'Pink Swan', image_url: 'nft-swan.png', kind: 'nft', value_stars: 1800, weight: 10 }
     ]},
-    { id: 'crate-orange', title: 'Огненный кейс', description: 'Редкие предметы расширенной коллекции', image_url: 'case-orange.png', price_xtr: 149, is_free: 0, active: 1, items: [
-      { id: 'orange-rifle', title: 'Carbon Rifle', image_url: 'rifle.png', kind: 'skin', value_stars: 160, weight: 45 }, { id: 'orange-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 430, weight: 30 }, { id: 'orange-perfume', title: 'Perfume Bottle', image_url: 'perfume.png', kind: 'gift', value_stars: 850, weight: 20 }, { id: 'orange-swan', title: 'Pink Swan', image_url: 'nft-swan.png', kind: 'nft', value_stars: 1800, weight: 5 }
+    { id: 'durov-case', title: 'Durov Case', description: 'Коллекция в стиле Telegram', image_url: 'case-durov.png', price_xtr: 39, is_free: 0, active: 1, items: [
+      { id: 'durov-rocket', title: 'Rocket', image_url: 'rocket.png', kind: 'gift', value_stars: 25, weight: 50 }, { id: 'durov-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 430, weight: 35 }, { id: 'durov-swan', title: 'Pink Swan', image_url: 'nft-swan.png', kind: 'nft', value_stars: 1800, weight: 15 }
     ]},
-    { id: 'legend', title: 'Легендарный кейс', description: 'Коллекционные предметы высокого уровня', image_url: 'case-orange.png', price_xtr: 299, is_free: 0, active: 1, max_opens: 500, opened_count: 12, items: [
-      { id: 'legend-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 600, weight: 55 }, { id: 'legend-swan', title: 'Pink Swan', image_url: 'nft-swan.png', kind: 'nft', value_stars: 1800, weight: 35 }, { id: 'legend-perfume', title: 'Perfume Bottle', image_url: 'perfume.png', kind: 'gift', value_stars: 4200, weight: 9 }, { id: 'legend-rifle', title: 'Carbon Rifle', image_url: 'rifle.png', kind: 'skin', value_stars: 9500, weight: 1 }
+    { id: 'march-8-case', title: '8 March Case', description: 'Праздничная коллекция', image_url: 'case-march-8.png', price_xtr: 39, is_free: 0, active: 1, items: [
+      { id: 'march-rose', title: 'Роза', image_url: 'gift-rose.png', kind: 'gift', value_stars: 10, weight: 60 }, { id: 'march-heart', title: 'Сердце', image_url: 'gift-heart.png', kind: 'gift', value_stars: 15, weight: 30 }, { id: 'march-cake', title: 'Торт', image_url: 'gift-cake.png', kind: 'gift', value_stars: 40, weight: 10 }
+    ]},
+    { id: 'halloween-case', title: 'Halloween Case', description: 'Мрачная коллекция подарков', image_url: 'case-halloween.png', price_xtr: 39, is_free: 0, active: 1, items: [
+      { id: 'halloween-bear', title: 'Мишка', image_url: 'gift-bear-holiday.png', kind: 'gift', value_stars: 10, weight: 60 }, { id: 'halloween-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 430, weight: 30 }, { id: 'halloween-swan', title: 'Pink Swan', image_url: 'nft-swan.png', kind: 'nft', value_stars: 1800, weight: 10 }
+    ]},
+    { id: 'daily-case', title: 'Daily Case', description: 'Ежедневная коллекция подарков', image_url: 'case-daily.png', price_xtr: 39, is_free: 0, active: 1, items: [
+      { id: 'dc-teddy', title: 'Плюшевый мишка', image_url: 'teddy.png', kind: 'gift', value_stars: 5, weight: 55 }, { id: 'dc-rose', title: 'Роза', image_url: 'gift-rose.png', kind: 'gift', value_stars: 10, weight: 35 }, { id: 'dc-ring', title: 'Blue Ring', image_url: 'ring.png', kind: 'nft', value_stars: 190, weight: 10 }
     ]}
   ];
   const mockWins = [
@@ -48,6 +54,11 @@
   function asset(filename) {
     const clean = String(filename || 'gift-box.png').split('/').pop().replace(/[^a-z0-9._-]/gi, '');
     return `./assets/${clean || 'gift-box.png'}`;
+  }
+  function imageSrc(value) {
+    const raw = String(value || 'gift-box.png').trim();
+    if (/^https:\/\//i.test(raw)) { try { const url = new URL(raw); if (url.protocol === 'https:') return url.href; } catch {} }
+    return asset(raw);
   }
   function starSvg(cls = 'mini-star') { return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.8 2.8 5.7 6.3.9-4.55 4.43 1.08 6.27L12 17.15l-5.63 2.95 1.08-6.27L2.9 9.4l6.3-.9L12 2.8Z"/></svg>`; }
   function money(value, suffix = '★') { return `${Number(value || 0).toLocaleString('ru-RU')} ${suffix}`; }
@@ -162,7 +173,7 @@
     return cases;
   }
   function cardMarkup(c, free = false) {
-    const image = asset(c.image_url);
+    const image = imageSrc(c.image_url);
     const tag = free ? (c.id === 'daily' ? 'Подарок каждый день' : 'Подарок ждёт') : `${money(c.price_xtr, 'Stars')}`;
     const label = free ? (c.id === 'daily' ? 'Забрать' : 'Бесплатный бонус') : 'Открыть';
     const button = free ? `<button class="tag-price free" data-claim-case="${esc(c.id)}">${label}</button>` : `<button class="tag-price" data-open-case="${esc(c.id)}">${starSvg()} ${esc(c.price_xtr)} Stars</button>`;
@@ -171,7 +182,7 @@
   function renderHome() {
     const freeCases = [caseById('daily'), caseById('nft-mini')].filter(Boolean);
     $('#free-grid').innerHTML = freeCases.map(c => cardMarkup(c, true)).join('');
-    const items = filteredCases().filter(c => !['daily'].includes(c.id));
+    const items = filteredCases().filter(c => !['daily','nft-mini'].includes(c.id));
     $('#case-grid').innerHTML = items.map(c => cardMarkup(c, false)).join('') || `<div class="empty-inline">Ничего не найдено</div>`;
     if (S.isAdmin) $('#admin-shortcut-wrap').classList.remove('hidden');
   }
@@ -204,7 +215,7 @@
   function renderBalance() { $('#balance-value').textContent = Number(S.balance || 0).toLocaleString('ru-RU'); }
   function renderLive() {
     const wins = S.wins?.length ? S.wins : mockWins;
-    $('#live-feed').innerHTML = wins.slice(0,12).map(w => `<div class="live-card"><img loading="lazy" src="${asset(w.image_url)}" alt=""/><span><b>${esc(w.username ? '@'+w.username : 'Player')} · ${esc(w.item_title)}</b><small>${esc(money(w.value_stars))}</small></span></div>`).join('');
+    $('#live-feed').innerHTML = wins.slice(0,12).map(w => `<div class="live-card"><img loading="lazy" src="${imageSrc(w.image_url)}" alt=""/><span><b>${esc(w.username ? '@'+w.username : 'Player')} · ${esc(w.item_title)}</b><small>${esc(money(w.value_stars))}</small></span></div>`).join('');
   }
   function renderAll() {
     renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent();
@@ -223,11 +234,11 @@
   function renderRoulette(c) {
     const items = c.items || []; const all = [...items, ...items, ...items, ...items, ...items];
     $('#roulette-track').style.transition = 'none'; $('#roulette-track').style.transform = 'translateX(0)';
-    $('#roulette-track').innerHTML = all.map((item, i) => `<div class="roulette-item" data-roulette-index="${i}"><img src="${asset(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(money(item.value_stars))}</small></div>`).join('');
+    $('#roulette-track').innerHTML = all.map((item, i) => `<div class="roulette-item" data-roulette-index="${i}"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(money(item.value_stars))}</small></div>`).join('');
   }
   function renderOdds(c) {
     const items = c.items || []; const sum = items.reduce((n, i) => n + Number(i.weight || 0), 0) || 1;
-    $('#odds-list').innerHTML = [...items].sort((a,b)=>Number(b.value_stars)-Number(a.value_stars)).map(item => `<article class="drop-item"><img loading="lazy" src="${asset(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(money(item.value_stars))}</small><span class="odds">Шанс ${((Number(item.weight)/sum)*100).toFixed(2)}%</span></article>`).join('');
+    $('#odds-list').innerHTML = [...items].sort((a,b)=>Number(b.value_stars)-Number(a.value_stars)).map(item => `<article class="drop-item"><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(money(item.value_stars))}</small><span class="odds">Шанс ${((Number(item.weight)/sum)*100).toFixed(2)}%</span></article>`).join('');
   }
   function selectQuantity(q) {
     S.quantity = Number(q); $$('.qty-chip').forEach(b => b.classList.toggle('active', Number(b.dataset.qty) === S.quantity));
@@ -301,9 +312,9 @@
   function renderInventory() {
     const items = S.inventory || [];
     $('#inventory-count').textContent=String(items.length);
-    $('#inventory-grid').innerHTML=items.map(item=>`<article class="inventory-card"><span class="inventory-tag">${esc(itemKind(item))}</span><img loading="lazy" src="${asset(item.image_url)}" alt="${esc(item.title)}"/><h3>${esc(item.title)}</h3><p>${esc(money(item.value_stars))} · ${esc(item.status==='withdraw_pending'?'На выводе':'В коллекции')}</p>${item.status==='owned'?`<button class="small-primary" data-withdraw="${esc(item.inventory_id)}">Запросить вывод</button>`:`<button class="secondary-btn" disabled>В обработке</button>`}</article>`).join('');
+    $('#inventory-grid').innerHTML=items.map(item=>`<article class="inventory-card"><span class="inventory-tag">${esc(itemKind(item))}</span><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><h3>${esc(item.title)}</h3><p>${esc(money(item.value_stars))} · ${esc(item.status==='withdraw_pending'?'На выводе':'В коллекции')}</p>${item.status==='owned'?`<button class="small-primary" data-withdraw="${esc(item.inventory_id)}">Запросить вывод</button>`:`<button class="secondary-btn" disabled>В обработке</button>`}</article>`).join('');
     $('#inventory-empty').classList.toggle('visible',items.length===0); $('#inventory-grid').classList.toggle('hidden',items.length===0);
-    $('#upgrade-inventory').innerHTML=items.slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${asset(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся здесь после открытия кейса.</span>`;
+    $('#upgrade-inventory').innerHTML=items.slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся здесь после открытия кейса.</span>`;
   }
   function showWithdrawConfirm(inventoryId) {
     openModal(`<h2 class="modal-title" id="modal-title">Запросить вывод?</h2><p class="modal-copy">Администратор получит заявку с ID, @username и выбранным предметом. Для подачи заявки у аккаунта Telegram должен быть установлен публичный @username. Фактическую передачу проверяет администратор.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-withdraw="${esc(inventoryId)}">Отправить заявку</button></div>`);
@@ -319,7 +330,7 @@
     for(let i=0;i<60;i++) { const a=(Math.PI*2*i/60)-Math.PI/2; const r1=i%5===0?142:147; const r2=i%5===0?154:151; const x1=180+Math.cos(a)*r1,y1=180+Math.sin(a)*r1,x2=180+Math.cos(a)*r2,y2=180+Math.sin(a)*r2; const line=document.createElementNS('http://www.w3.org/2000/svg','line'); line.setAttribute('x1',x1);line.setAttribute('y1',y1);line.setAttribute('x2',x2);line.setAttribute('y2',y2); if(i%5===0) line.setAttribute('stroke-width','3'); group.append(line); }
   }
   function allTargetItems() { const map=new Map(); S.cases.forEach(c=>(c.items||[]).forEach(item=>{ if(!map.has(item.id)||Number(item.value_stars)>Number(map.get(item.id).value_stars)) map.set(item.id,item); })); return [...map.values()].sort((a,b)=>Number(b.value_stars)-Number(a.value_stars)); }
-  function chooseTarget(target) { S.selectedTarget=target; $('#target-image').src=asset(target.image_url);$('#target-title').textContent=target.title;$('#target-value').textContent=`Стоимость ${money(target.value_stars)}`;updateUpgradeChance(); }
+  function chooseTarget(target) { S.selectedTarget=target; $('#target-image').src=imageSrc(target.image_url);$('#target-title').textContent=target.title;$('#target-value').textContent=`Стоимость ${money(target.value_stars)}`;updateUpgradeChance(); }
   function updateUpgradeChance() {
     const target=S.selectedTarget||allTargetItems()[0]; const bal=Math.max(1,Number(S.balance)||0);
     const maxBet=Math.max(1,Math.min(bal,1000)); const bet= Math.max(1,Math.min(maxBet,Number(S.upgradeBet)||1)); S.upgradeBet=bet;
@@ -331,11 +342,11 @@
   function renderUpgrade() {
     updateWheelTicks();
     const target=S.selectedTarget||allTargetItems()[0]; if(target) chooseTarget(target);
-    $('#upgrade-inventory').innerHTML=(S.inventory||[]).slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${asset(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся после открытия кейсов.</span>`;
+    $('#upgrade-inventory').innerHTML=(S.inventory||[]).slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся после открытия кейсов.</span>`;
   }
   function showTargetModal() {
     const targets=allTargetItems();
-    openModal(`<h2 class="modal-title" id="modal-title">Выберите предмет</h2><p class="modal-copy">Целевой предмет определяет стоимость и расчёт шанса.</p><div class="modal-grid">${targets.map(i=>`<button class="modal-choice" data-choose-target="${esc(i.id)}"><img src="${asset(i.image_url)}" alt="${esc(i.title)}"/><span><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></span></button>`).join('')}</div>`);
+    openModal(`<h2 class="modal-title" id="modal-title">Выберите предмет</h2><p class="modal-copy">Целевой предмет определяет стоимость и расчёт шанса.</p><div class="modal-grid">${targets.map(i=>`<button class="modal-choice" data-choose-target="${esc(i.id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><span><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></span></button>`).join('')}</div>`);
   }
   async function performUpgrade() {
     const target=S.selectedTarget||allTargetItems()[0]; if(!target)return toast('Нет доступных предметов','error');
@@ -375,7 +386,7 @@
       return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small><img loading="lazy" src="${asset(freeImage)}" alt="Бесплатная награда ${level}"/><button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small><img loading="lazy" src="${asset(premiumImage)}" alt="Premium награда ${level}"/><button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
     }).join('');
     const quests=data.quests||[];$('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
-    const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong><img src="${asset(d.image_url)}" alt="Подарок дня ${d.day}" /></button>`).join('');
+    const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong><img src="${imageSrc(d.image_url)}" alt="Подарок дня ${d.day}" /></button>`).join('');
   }
   async function claimLevel(level, branch='free') {
     if(MOCK) { const p=S.eventData.progress;p.xp=Number(p.xp||0);const needed=level*100;if(p.xp<needed)return toast('Недостаточно XP для этой награды','error');if(branch==='premium'&&!p.premium_unlocked)return toast('Сначала активируйте Premium Pass','error');toast(`DEMO: награда уровня ${level} доступна в полной версии`,'success');return renderEvent(); }
@@ -397,7 +408,7 @@
 
   async function loadBattles() {
     if(MOCK) {$('#battles-list').innerHTML=`<div class="battle-row"><img src="${asset('case-blue.png')}" alt="Кейс"/><div><strong>Битва #DEMO-01</strong><small>Сапфировый кейс · вход 79 кредитов · ожидает игрока</small></div><button class="small-primary" data-demo-battle>Присоединиться</button></div>`;return;}
-    try {const result=await api('/api/battles');$('#battles-list').innerHTML=result.battles.map(b=>`<article class="battle-row"><img src="${asset(b.image_url)}" alt="${esc(b.case_title)}"/><div><strong>${esc(b.case_title)}</strong><small>Вход ${esc(b.entry_cost)} кредитов · ${Number(b.players)}/2 игроков</small><small>${esc(b.status==='waiting'?'Ожидает игрока':'В игре')}</small></div><button class="small-primary" data-join-battle="${esc(b.id)}">Войти</button></article>`).join('')||'<div class="empty-inline">Открытых битв пока нет. Создайте первую.</div>';}
+    try {const result=await api('/api/battles');$('#battles-list').innerHTML=result.battles.map(b=>`<article class="battle-row"><img src="${imageSrc(b.image_url)}" alt="${esc(b.case_title)}"/><div><strong>${esc(b.case_title)}</strong><small>Вход ${esc(b.entry_cost)} кредитов · ${Number(b.players)}/2 игроков</small><small>${esc(b.status==='waiting'?'Ожидает игрока':'В игре')}</small></div><button class="small-primary" data-join-battle="${esc(b.id)}">Войти</button></article>`).join('')||'<div class="empty-inline">Открытых битв пока нет. Создайте первую.</div>';}
     catch(err){toast(err.message,'error');}
   }
   async function createBattle() {
@@ -419,8 +430,8 @@
   async function refreshUserData() {
     if(MOCK) { renderAll(); return; }
     try {
-      const [me, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
-      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;renderAll();
+      const [me, cases, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/cases'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
+      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;renderAll();
     } catch(err) { console.warn(err); }
   }
 
@@ -436,29 +447,119 @@
     } catch { toast('Не удалось открыть окно отправки. Скопируйте ссылку из профиля.', 'error'); }
   }
 
-  async function loadAdmin() {
+  function adminCaseList() {
+    if (MOCK) return S.cases.filter(c => !['daily','nft-mini'].includes(c.id));
+    return S.adminOverview?.cases || [];
+  }
+  function fillGiftSelector() {
+    const select = $('#admin-gift-select');
+    if (!select) return;
+    const catalog = Array.isArray(window.NGC_GIFT_CATALOG) ? window.NGC_GIFT_CATALOG : [];
+    select.innerHTML = catalog.map(item => `<option value="${esc(item.id)}">${esc(item.name)} · ${item.kind==='nft'?'NFT':'Обычный'}</option>`).join('');
+  }
+  async function loadAdmin(preselectId = '') {
     if(!S.isAdmin) { toast('Доступ запрещён','error');return setView('home'); }
-    if(MOCK) { $('#admin-case-select').innerHTML=S.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');fillAdminCase();$('#admin-orders').textContent='DEMO: заказы не создаются.';$('#admin-event-enabled').checked=true;$('#admin-event-type').value='battle_pass';$('#admin-event-title').value='Halloween Pass';return; }
-    try { const result=await api('/api/admin/overview');S.adminOverview=result;$('#admin-case-select').innerHTML=result.cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');fillAdminCase();$('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=result.event.ends_at?new Date(result.event.ends_at).toISOString().slice(0,16):'';$('#admin-orders').innerHTML=result.orders.map(o=>`<div class="admin-order"><span>${esc(o.order_type)} · ${esc(o.status)}<br/><small>${esc(o.telegram_id)}</small></span><strong>${esc(o.amount_xtr)} XTR</strong></div>`).join('')||'Заказов нет'; } catch(err){toast(err.message,'error');}
+    fillGiftSelector();
+    if(MOCK) {
+      const cases = adminCaseList();
+      $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
+      if (preselectId) $('#admin-case-select').value=preselectId;
+      fillAdminCase();
+      $('#admin-orders').textContent='DEMO: заказы не создаются. Изменения в демо не сохраняются в базе.';
+      $('#admin-event-enabled').checked=true;$('#admin-event-type').value='battle_pass';$('#admin-event-title').value='Halloween Pass';
+      return;
+    }
+    try {
+      const result=await api('/api/admin/overview'); S.adminOverview=result;
+      const cases=result.cases||[];
+      const selected = preselectId || $('#admin-case-select').value;
+      $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}${Number(c.active)?'':' · выкл.'}</option>`).join('');
+      if (selected && cases.some(c=>c.id===selected)) $('#admin-case-select').value=selected;
+      fillAdminCase();
+      $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=result.event.ends_at?new Date(result.event.ends_at).toISOString().slice(0,16):'';
+      $('#admin-orders').innerHTML=(result.orders||[]).map(o=>`<div class="admin-order"><span>${esc(o.order_type)} · ${esc(o.status)}<br/><small>${esc(o.telegram_id)}</small></span><strong>${esc(o.amount_xtr)} XTR</strong></div>`).join('')||'Заказов нет';
+    } catch(err){toast(err.message,'error');}
   }
   function fillAdminCase() {
-    const base = S.cases.find(c=>c.id===$('#admin-case-select').value) || S.cases[0];
-    const summary = (S.adminOverview?.cases||[]).find(c=>c.id===$('#admin-case-select').value);
-    const c = base ? { ...base, ...(summary || {}) } : null; if(!c)return;
-    $('#admin-case-price').value=c.price_xtr;$('#admin-case-limit').value=c.max_opens??'';$('#admin-case-active').checked=Boolean(Number(c.active));
-    const weights=(c.items||[]).map(i=>`<label class="weight-item"><span>${esc(i.title)}</span><input type="number" min="1" value="${Number(i.weight)}" data-weight-id="${esc(i.id)}" /></label>`).join('');
-    let holder=$('#admin-case-weights');if(!holder){holder=document.createElement('div');holder.id='admin-case-weights';holder.className='admin-weights';$('#admin-case-save').before(holder);}holder.innerHTML=`<p class="muted-note">Веса выпадения (больше вес = выше шанс). Сумма весов нормализуется автоматически.</p>${weights}`;
+    const caseId=$('#admin-case-select')?.value;
+    const base = adminCaseList().find(c=>c.id===caseId) || adminCaseList()[0];
+    if(!base) { $('#admin-case-weights').innerHTML='<p class="muted-note">Сначала создай кейс выше.</p>'; return; }
+    const c = base;
+    $('#admin-case-title').value=c.title||'';
+    $('#admin-case-image').value=c.image_url||'case-rich.png';
+    $('#admin-case-description').value=c.description||'';
+    $('#admin-case-price').value=c.price_xtr ?? 39;
+    $('#admin-case-limit').value=c.max_opens??'';
+    $('#admin-case-active').checked=Boolean(Number(c.active));
+    const items=c.items||[];
+    const liveItems=items.filter(i=>i.stock_limit==null || Number(i.awarded_count||0)<Number(i.stock_limit));
+    const total=liveItems.reduce((sum,i)=>sum+Number(i.weight||0),0);
+    const allTotal=items.reduce((sum,i)=>sum+Number(i.weight||0),0);
+    const weights=items.map(i=>{
+      const exhausted=i.stock_limit!=null && Number(i.awarded_count||0)>=Number(i.stock_limit);
+      const chance=exhausted ? (allTotal ? Number(i.weight||0)/allTotal*100 : 0.01) : (total ? Number(i.weight||0)/total*100 : 0.01);
+      return `<div class="case-item-admin ${exhausted?'is-exhausted':''}">
+        <div class="case-item-admin-top"><img src="${esc(imageSrc(i.image_url))}" alt=""/><div><strong>${esc(i.title)}</strong><small>${esc(i.kind==='nft'?'NFT':i.kind==='skin'?'Скин':'Обычный подарок')} · выпало ${Number(i.awarded_count||0)}${exhausted?' · запас исчерпан':''}</small></div><button type="button" class="remove-item-btn" data-admin-remove-item="${esc(i.id)}" title="Убрать предмет">Убрать</button></div>
+        <div class="form-grid"><label>Шанс, %<input type="number" min="0.01" max="100" step="0.01" value="${chance.toFixed(2)}" data-item-chance="${esc(i.id)}" /></label><label>Стоимость, Stars<input type="number" min="0" max="100000000" value="${Number(i.value_stars||0)}" data-item-price="${esc(i.id)}" /></label></div>
+        <label>Количество в кейсе <input type="number" min="1" placeholder="Без лимита" value="${i.stock_limit==null?'':Number(i.stock_limit)}" data-item-stock="${esc(i.id)}" /></label>
+      </div>`;
+    }).join('');
+    $('#admin-case-weights').innerHTML=`<div class="case-items-heading"><strong>Предметы в кейсе (${items.length})</strong><span>Доли нормализуются до 100%</span></div>${weights||'<p class="muted-note">В этом кейсе пока нет подарков. Добавь их в блоке ниже.</p>'}`;
   }
-  async function adminBalance(mode) {
-    const telegramId=$('#admin-user-id').value.trim(), amount=Number($('#admin-balance-amount').value);
-    if(MOCK){toast(`DEMO: запрос ${mode==='add'?'начисления':'списания'} не отправлялся`,'error');return;}
-    try {const result=await api('/api/admin/balance',{method:'POST',body:{telegramId,amount,mode}});toast(`Новый баланс: ${result.balance}`,'success');}catch(err){toast(err.message,'error');}
+  async function adminCreateCase() {
+    const title=$('#admin-new-case-title').value.trim();
+    const payload={title,description:$('#admin-new-case-description').value.trim(),imageUrl:$('#admin-new-case-image').value,priceXtr:Number($('#admin-new-case-price').value),maxOpens:$('#admin-new-case-limit').value===''?null:Number($('#admin-new-case-limit').value),active:false};
+    if (!title) return toast('Введи название кейса','error');
+    if (!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1) return toast('Цена кейса должна быть не меньше 1 Star','error');
+    if (MOCK) {
+      const id=`custom-${Date.now().toString(36)}`; const c={id,title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,is_free:0,active:0,max_opens:payload.maxOpens,opened_count:0,items:[]};S.cases.push(c);
+      $('#admin-new-case-title').value=''; toast('DEMO: кейс создан только в текущем окне','info'); await loadAdmin(id); $('#admin-case-select').value=id; fillAdminCase(); return;
+    }
+    try {const result=await api('/api/admin/cases',{method:'POST',body:payload});$('#admin-new-case-title').value='';$('#admin-new-case-description').value='';toast('Кейс создан. Теперь добавь предметы и сохрани настройки.','success');await loadAdmin(result.case.id);$('#admin-case-select').value=result.case.id;fillAdminCase();}
+    catch(err){toast(err.message,'error');}
+  }
+  async function adminAddItem() {
+    const caseId=$('#admin-case-select').value;
+    const catalog=(window.NGC_GIFT_CATALOG||[]).find(item=>item.id===$('#admin-gift-select').value);
+    if(!caseId) return toast('Сначала создай или выбери кейс','error');
+    if(!catalog) return toast('Выбери подарок из каталога','error');
+    const valueStars=Number($('#admin-item-price').value);
+    const chancePct=Number($('#admin-item-chance').value);
+    const stockValue=$('#admin-item-stock').value;
+    const stockLimit=stockValue===''?null:Number(stockValue);
+    if(!Number.isSafeInteger(valueStars)||valueStars<0) return toast('Стоимость предмета должна быть 0 или больше','error');
+    if(!Number.isFinite(chancePct)||chancePct<=0||chancePct>100) return toast('Шанс должен быть от 0,01 до 100%','error');
+    if(stockLimit!==null&&(!Number.isSafeInteger(stockLimit)||stockLimit<1)) return toast('Количество должно быть больше нуля или пустым','error');
+    const payload={catalogId:catalog.id,title:catalog.name,imageUrl:catalog.image_url,kind:catalog.kind==='nft'?'nft':catalog.kind==='skin'?'skin':'gift',valueStars,chancePct,stockLimit};
+    if(MOCK){
+      const c=S.cases.find(item=>item.id===caseId);if(!c)return toast('Кейс не найден','error');
+      if((c.items||[]).some(i=>i.title===payload.title&&i.image_url===payload.imageUrl))return toast('Этот подарок уже добавлен','error');
+      c.items ||= [];c.items.push({id:`${caseId}-${Date.now().toString(36)}`,title:payload.title,image_url:payload.imageUrl,kind:payload.kind,value_stars:valueStars,weight:Math.max(1,Math.round(chancePct*1000)),stock_limit:stockLimit,awarded_count:0});
+      fillAdminCase(); toast('DEMO: предмет добавлен только в текущем окне','success');return;
+    }
+    try {await api(`/api/admin/cases/${encodeURIComponent(caseId)}/items`,{method:'POST',body:payload});toast('Подарок добавлен в кейс','success');await loadAdmin(caseId);await refreshUserData();}
+    catch(err){toast(err.message,'error');}
+  }
+  async function adminRemoveItem(itemId) {
+    const caseId=$('#admin-case-select').value;
+    if(!caseId||!itemId)return;
+    if(!confirm('Убрать этот предмет из выпадений кейса? Уже выданные предметы останутся в инвентарях.'))return;
+    if(MOCK){const c=S.cases.find(item=>item.id===caseId);if(c)c.items=(c.items||[]).filter(i=>i.id!==itemId);fillAdminCase();toast('DEMO: предмет убран только в этом окне','info');return;}
+    try {await api(`/api/admin/cases/${encodeURIComponent(caseId)}/items/${encodeURIComponent(itemId)}`,{method:'DELETE'});toast('Предмет убран из выпадений','success');await loadAdmin(caseId);await refreshUserData();}
+    catch(err){toast(err.message,'error');}
   }
   async function adminSaveCase() {
-    const caseId=$('#admin-case-select').value; const items=$$('[data-weight-id]').map(input=>({id:input.dataset.weightId,weight:Number(input.value)}));
-    const payload={priceXtr:Number($('#admin-case-price').value),maxOpens:$('#admin-case-limit').value===''?null:Number($('#admin-case-limit').value),active:$('#admin-case-active').checked,items};
-    if(MOCK)return toast('DEMO: настройки не сохранялись на сервере','error');
-    try {await api(`/api/admin/cases/${encodeURIComponent(caseId)}`,{method:'PATCH',body:payload});toast('Настройки кейса сохранены','success');await loadAdmin();await refreshUserData();}catch(err){toast(err.message,'error');}
+    const caseId=$('#admin-case-select').value;
+    const itemIds=new Set($$('[data-item-chance]').map(input=>input.dataset.itemChance));
+    const items=[...itemIds].map(id=>({id,chancePct:Number($(`[data-item-chance="${CSS.escape(id)}"]`).value),valueStars:Number($(`[data-item-price="${CSS.escape(id)}"]`).value),stockLimit:$(`[data-item-stock="${CSS.escape(id)}"]`).value===''?null:Number($(`[data-item-stock="${CSS.escape(id)}"]`).value)}));
+    for(const item of items){if(!Number.isFinite(item.chancePct)||item.chancePct<=0||item.chancePct>100)return toast('Проверь шансы предметов: допустимо от 0,01 до 100%','error');if(!Number.isSafeInteger(item.valueStars)||item.valueStars<0)return toast('Проверь стоимость предмета','error');if(item.stockLimit!==null&&(!Number.isSafeInteger(item.stockLimit)||item.stockLimit<1))return toast('Количество должно быть больше нуля или пустым','error');}
+    const payload={title:$('#admin-case-title').value.trim(),description:$('#admin-case-description').value.trim(),imageUrl:$('#admin-case-image').value,priceXtr:Number($('#admin-case-price').value),maxOpens:$('#admin-case-limit').value===''?null:Number($('#admin-case-limit').value),active:$('#admin-case-active').checked,items};
+    if(!payload.title)return toast('Название кейса не может быть пустым','error');
+    if(!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1)return toast('Цена кейса должна быть не меньше 1 Star','error');
+    if(payload.maxOpens!==null&&(!Number.isSafeInteger(payload.maxOpens)||payload.maxOpens<1))return toast('Лимит должен быть больше нуля или пустым','error');
+    if(MOCK){const c=S.cases.find(item=>item.id===caseId);if(!c)return toast('Кейс не найден','error');Object.assign(c,{title:payload.title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,max_opens:payload.maxOpens,active:payload.active?1:0});for(const item of items){const found=c.items.find(i=>i.id===item.id);if(found){found.weight=Math.max(1,Math.round(item.chancePct*1000));found.value_stars=item.valueStars;found.stock_limit=item.stockLimit;}}if(payload.active&&!c.items.length){c.active=0;return toast('Добавь хотя бы один предмет перед активацией','error');}toast('DEMO: настройки обновлены только в текущем окне','info');renderAll();fillAdminCase();return;}
+    try {await api(`/api/admin/cases/${encodeURIComponent(caseId)}`,{method:'PATCH',body:payload});toast('Настройки кейса сохранены','success');await loadAdmin(caseId);await refreshUserData();}
+    catch(err){toast(err.message,'error');}
   }
   async function adminCreatePromo() {
     const payload={code:$('#admin-promo-code').value.trim().toUpperCase(),kind:$('#admin-promo-kind').value,amount:Number($('#admin-promo-amount').value),maxUses:$('#admin-promo-max').value===''?null:Number($('#admin-promo-max').value),expiresAt:$('#admin-promo-expiry').value?new Date($('#admin-promo-expiry').value).toISOString():null};
@@ -504,7 +605,7 @@
     if(target.matches('[data-confirm-withdraw]')) {withdraw(target.dataset.confirmWithdraw);return;}
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
     if(target.id==='admin-credit-btn') {adminBalance('add');return;} if(target.id==='admin-debit-btn') {adminBalance('subtract');return;}
-    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;}
+    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;}
     if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#pass-levels').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
     if(target.matches('[data-claim-level]')) {claimLevel(Number(target.dataset.claimLevel),target.dataset.branch||'free');return;}
     if(target.matches('[data-claim-quest]')) {claimQuest(target.dataset.claimQuest);return;}

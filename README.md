@@ -17,7 +17,8 @@ NftGiftCase/
 ├── backend/
 │   ├── app.js                 # Express API, HMAC auth, Payments, события, PvP, admin
 │   └── worker.js              # Cloudflare Workers runtime entrypoint
-├── db/0001_initial.sql        # таблицы + начальные кейсы/предметы/задания
+├── db/0001_initial.sql        # таблицы + начальные системные данные
+├── db/0002_case_builder.sql   # Rich/Durov/8 March/Halloween/Daily cases
 ├── scripts/setup-telegram.mjs # webhook, menu button, команды бота
 ├── .github/workflows/pages.yml# CI-деплой только демо на GitHub Pages
 ├── wrangler.jsonc             # настройки Cloudflare Worker + D1
@@ -42,7 +43,7 @@ python -m http.server 8080 --directory frontend
 
 - Frontend: HTML5, Tailwind CDN для utility-классов, CSS-переменные и custom CSS, vanilla JavaScript, SVG wheel, Web Audio API, Telegram WebApp SDK.
 - Backend: Express 5 на Cloudflare Workers через `nodejs_compat` и `cloudflare:node` HTTP bridge.
-- Storage: Cloudflare D1 (SQLite); миграция `db/0001_initial.sql`.
+- Storage: Cloudflare D1 (SQLite); миграции `db/0001_initial.sql` и `db/0002_case_builder.sql`.
 - Payments: Telegram Bot API `createInvoiceLink`, `XTR`, `pre_checkout_query`, `successful_payment`, уникальный `telegram_payment_charge_id`.
 
 ## Важные смысловые ограничения
@@ -52,6 +53,12 @@ python -m http.server 8080 --directory frontend
 3. Вывод подарка в этом starter — заявка на ручную обработку: сервер проверяет `@username`, резервирует предмет и уведомляет администратора. Интеграции с кошельком/передачей реального Telegram Gift или NFT в проекте нет; её нужно подключить к своему легальному источнику предметов.
 4. Админ проверяется по Telegram ID `1080484217` на backend. Username в Telegram может измениться, поэтому ID является главным критерием. Интерфейсный флаг администратора не защищает API.
 5. Случайные платные награды, PvP со ставками и вывод предметов могут подпадать под местные игровые/потребительские требования и правила Telegram. Перед реальным запуском проверьте применимые правила, возрастные ограничения, прозрачность шансов, пользовательское соглашение, поддержку и возвраты.
+
+## Конструктор кейсов в админке
+
+Админка доступна Telegram ID `1080484217`. В `Создать кейс` задай название, обложку, цену открытия в Stars и общий лимит. В выбранный кейс можно добавлять любой обычный или NFT-подарок из `frontend/gift-catalog.js`. Для каждого предмета задаются стоимость, вероятность и запас. Пустой лимит запаса означает неограниченное количество; пустой общий лимит означает, что кейс не ограничен числом открытий.
+
+Миграция `db/0002_case_builder.sql` создаёт пять выключенных черновиков с предоставленными обложками: `Rich Case`, `Durov Case`, `8 March Case`, `Halloween Case`, `Daily Case`. Добавь в кейс хотя бы один предмет, затем включи `Кейс активен` и сохрани. Пустые черновики не публикуются и не открываются. Введённые проценты конвертируются в веса; если сумма не равна 100%, шансы нормализуются пропорционально.
 
 ## Команды
 

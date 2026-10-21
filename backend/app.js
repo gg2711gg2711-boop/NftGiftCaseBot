@@ -14,6 +14,19 @@ const dbRun = (db, sql, ...args) => db.prepare(sql).bind(...args).run();
 const id = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 const fail = (res, status, message) => json(res, status, { ok: false, error: message });
+function normalizeImageUrl(value) {
+  const raw = String(value || '').trim();
+  if (/^[a-z0-9][a-z0-9._-]{0,119}$/i.test(raw)) return raw;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return url.href;
+  } catch { /* invalid URL */ }
+  return null;
+}
+function adminInteger(value, min, max) {
+  const n = Math.trunc(Number(value));
+  return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
+}
 
 function secureInt(maxExclusive) {
   if (!Number.isSafeInteger(maxExclusive) || maxExclusive <= 0) throw new Error('Invalid random range');
@@ -242,7 +255,7 @@ export function createApp(envProvider = () => ({})) {
       res.setHeader('Vary', 'Origin');
     } else if (allowed.includes('*')) res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Telegram-Init-Data, X-Telegram-Bot-Api-Secret-Token');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Max-Age', '86400');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -318,7 +331,7 @@ export function createApp(envProvider = () => ({})) {
   app.get('/api/cases', async (req, res) => {
     const db = dbOf(req);
     const cases = await dbAll(db, `SELECT c.*, COUNT(i.id) AS item_count FROM cases c LEFT JOIN case_items i ON i.case_id=c.id WHERE c.active=1 GROUP BY c.id ORDER BY c.sort_order,c.id`);
-    const detailed = await Promise.all(cases.map(async (c) => ({ ...c, items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY value_stars DESC', c.id) })));
+    const detailed = await Promise.all(cases.map(async (c) => ({ ...c, items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? AND (stock_limit IS NULL OR awarded_count < stock_limit) ORDER BY value_stars DESC', c.id) })));
     return json(res, 200, { ok: true, cases: detailed });
   });
 
@@ -553,17 +566,73 @@ export function createApp(envProvider = () => ({})) {
     return json(res, 200, { ok:true, status:'finished', winnerId:winner.userId, results, transferredItem:loser.item, balance:(await dbFirst(db,'SELECT balance FROM users WHERE telegram_id=?',winner.userId))?.balance });
   });
 
-  // Admin API: secured by Telegram ID server-side; the client-side hide/show is only cosmetic.
+  // Admin API: all write operations are protected server-side by Telegram ID.
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
     const db = dbOf(req);
     const [userCount, orders, withdrawals, cases, promos] = await Promise.all([
-      dbFirst(db, 'SELECT COUNT(*) AS n FROM users'), dbAll(db, 'SELECT id,telegram_id,order_type,amount_xtr,status,created_at,paid_at FROM orders ORDER BY created_at DESC LIMIT 30'),
+      dbFirst(db, 'SELECT COUNT(*) AS n FROM users'),
+      dbAll(db, 'SELECT id,telegram_id,order_type,amount_xtr,status,created_at,paid_at FROM orders ORDER BY created_at DESC LIMIT 30'),
       dbAll(db, `SELECT w.id,w.status,w.created_at,u.telegram_id,u.username,ci.title AS item_title FROM withdrawals w JOIN users u ON u.telegram_id=w.telegram_id JOIN inventory inv ON inv.id=w.inventory_id JOIN case_items ci ON ci.id=inv.item_id ORDER BY w.created_at DESC LIMIT 30`),
-      dbAll(db, 'SELECT id,title,price_xtr,active,max_opens,opened_count,reserved_opens FROM cases ORDER BY sort_order'),
+      // Hide internal daily reward cases and retired sample crates from the owner's case builder.
+      dbAll(db, `SELECT c.* FROM cases c WHERE c.id NOT IN ('daily','nft-mini','crate-blue','crate-orange','legend') ORDER BY c.sort_order,c.created_at`),
       dbAll(db, 'SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 30')
     ]);
+    const detailedCases = await Promise.all(cases.map(async c => ({
+      ...c,
+      items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY created_at,id', c.id)
+    })));
     const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1');
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases, promos, event });
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event });
+  });
+
+  app.post('/api/admin/cases', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    const title = String(req.body?.title || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 180);
+    const imageUrl = normalizeImageUrl(req.body?.imageUrl);
+    const price = adminInteger(req.body?.priceXtr, 1, 1000000);
+    const maxRaw = req.body?.maxOpens;
+    const maxOpens = maxRaw === '' || maxRaw === null || maxRaw === undefined ? null : adminInteger(maxRaw, 1, 100000000);
+    if (title.length < 2 || title.length > 48) return fail(res, 400, 'Название кейса должно содержать от 2 до 48 символов');
+    if (!imageUrl) return fail(res, 400, 'Выбери корректную обложку кейса');
+    if (price === null) return fail(res, 400, 'Цена открытия должна быть от 1 до 1 000 000 Stars');
+    if (maxRaw !== '' && maxRaw !== null && maxRaw !== undefined && maxOpens === null) return fail(res, 400, 'Лимит открытий должен быть положительным целым числом');
+    const caseId = `custom-${id().replaceAll('-', '').slice(0, 16)}`;
+    const sort = Number((await dbFirst(db, 'SELECT COALESCE(MAX(sort_order),0)+10 AS next_sort FROM cases'))?.next_sort || 100);
+    await dbRun(db, `INSERT INTO cases(id,title,description,image_url,price_xtr,is_free,active,max_opens,sort_order) VALUES(?,?,?,?,?,0,0,?,?)`, caseId, title, description, imageUrl, price, maxOpens, sort);
+    return json(res, 201, { ok:true, case:await dbFirst(db, 'SELECT * FROM cases WHERE id=?', caseId) });
+  });
+
+  app.post('/api/admin/cases/:caseId/items', requireAdmin, async (req, res) => {
+    const db = dbOf(req); const caseId = String(req.params.caseId || '');
+    const c = await dbFirst(db, 'SELECT id FROM cases WHERE id=?', caseId);
+    if (!c) return fail(res, 404, 'Кейс не найден');
+    const title = String(req.body?.title || '').trim();
+    const imageUrl = normalizeImageUrl(req.body?.imageUrl);
+    const kindRaw = String(req.body?.kind || 'gift');
+    const kind = ['nft','skin'].includes(kindRaw) ? kindRaw : (['gift','regular'].includes(kindRaw) ? 'gift' : null);
+    const valueStars = adminInteger(req.body?.valueStars, 0, 100000000);
+    const chancePct = Number(req.body?.chancePct);
+    const stockRaw = req.body?.stockLimit;
+    const stockLimit = stockRaw === '' || stockRaw === null || stockRaw === undefined ? null : adminInteger(stockRaw, 1, 100000000);
+    if (title.length < 1 || title.length > 100 || !imageUrl || !kind) return fail(res, 400, 'Проверь название, изображение и тип предмета');
+    if (valueStars === null) return fail(res, 400, 'Стоимость предмета должна быть целым числом от 0 до 100 000 000');
+    if (!Number.isFinite(chancePct) || chancePct <= 0 || chancePct > 100) return fail(res, 400, 'Шанс должен быть больше 0 и не больше 100%');
+    if (stockRaw !== '' && stockRaw !== null && stockRaw !== undefined && stockLimit === null) return fail(res, 400, 'Количество должно быть положительным целым числом или пустым');
+    const duplicate = await dbFirst(db, `SELECT id FROM case_items WHERE case_id=? AND title=? AND image_url=? AND (stock_limit IS NULL OR awarded_count < stock_limit) LIMIT 1`, caseId, title, imageUrl);
+    if (duplicate) return fail(res, 409, 'Этот подарок уже добавлен в данный кейс');
+    const itemId = id(); const weight = Math.max(1, Math.round(chancePct * 1000));
+    await dbRun(db, `INSERT INTO case_items(id,case_id,title,image_url,kind,value_stars,weight,stock_limit) VALUES(?,?,?,?,?,?,?,?)`, itemId, caseId, title, imageUrl, kind, valueStars, weight, stockLimit);
+    return json(res, 201, { ok:true, item:await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE id=?', itemId) });
+  });
+
+  app.delete('/api/admin/cases/:caseId/items/:itemId', requireAdmin, async (req, res) => {
+    const db = dbOf(req); const caseId = String(req.params.caseId || ''); const itemId = String(req.params.itemId || '');
+    const item = await dbFirst(db, 'SELECT id,awarded_count FROM case_items WHERE id=? AND case_id=?', itemId, caseId);
+    if (!item) return fail(res, 404, 'Предмет кейса не найден');
+    // Keep awarded items referentially intact in inventory, but exhaust this item's remaining stock.
+    await dbRun(db, 'UPDATE case_items SET stock_limit=awarded_count WHERE id=? AND case_id=?', itemId, caseId);
+    return json(res, 200, { ok:true });
   });
 
   app.post('/api/admin/balance', requireAdmin, async (req, res) => {
@@ -581,23 +650,71 @@ export function createApp(envProvider = () => ({})) {
 
   app.patch('/api/admin/cases/:caseId', requireAdmin, async (req, res) => {
     const db = dbOf(req); const caseId = String(req.params.caseId);
-    const price = req.body?.priceXtr === undefined ? undefined : Math.trunc(Number(req.body.priceXtr));
-    const active = req.body?.active === undefined ? undefined : (req.body.active ? 1 : 0);
-    const maxOpens = req.body?.maxOpens === undefined ? undefined : (req.body.maxOpens === null || req.body.maxOpens === '' ? null : Math.trunc(Number(req.body.maxOpens)));
-    const c = await dbFirst(db, 'SELECT id FROM cases WHERE id=?', caseId);
+    const c = await dbFirst(db, 'SELECT * FROM cases WHERE id=?', caseId);
     if (!c) return fail(res, 404, 'Кейс не найден');
-    if (price !== undefined && (!Number.isSafeInteger(price) || price < 0 || price > 1000000)) return fail(res, 400, 'Некорректная цена');
-    if (maxOpens !== undefined && maxOpens !== null && (!Number.isSafeInteger(maxOpens) || maxOpens < 0)) return fail(res, 400, 'Некорректный лимит');
-    if (price !== undefined) await dbRun(db,'UPDATE cases SET price_xtr=? WHERE id=?',price,caseId);
-    if (active !== undefined) await dbRun(db,'UPDATE cases SET active=? WHERE id=?',active,caseId);
-    if (maxOpens !== undefined) await dbRun(db,'UPDATE cases SET max_opens=? WHERE id=?',maxOpens,caseId);
+
+    const updates = [];
+    const args = [];
+    if (req.body?.title !== undefined) {
+      const title = String(req.body.title || '').trim();
+      if (title.length < 2 || title.length > 48) return fail(res, 400, 'Название кейса должно содержать от 2 до 48 символов');
+      updates.push('title=?'); args.push(title);
+    }
+    if (req.body?.description !== undefined) { updates.push('description=?'); args.push(String(req.body.description || '').trim().slice(0,180)); }
+    if (req.body?.imageUrl !== undefined) {
+      const imageUrl = normalizeImageUrl(req.body.imageUrl);
+      if (!imageUrl) return fail(res, 400, 'Некорректное изображение');
+      updates.push('image_url=?'); args.push(imageUrl);
+    }
+    if (req.body?.priceXtr !== undefined) {
+      const price = adminInteger(req.body.priceXtr, 1, 1000000);
+      if (price === null) return fail(res, 400, 'Цена открытия должна быть от 1 до 1 000 000 Stars');
+      updates.push('price_xtr=?'); args.push(price);
+    }
+    let nextActive = c.active;
+    if (req.body?.active !== undefined) nextActive = req.body.active ? 1 : 0;
+    const maxRaw = req.body?.maxOpens;
+    if (maxRaw !== undefined) {
+      const maxOpens = maxRaw === '' || maxRaw === null ? null : adminInteger(maxRaw, 1, 100000000);
+      if (maxRaw !== '' && maxRaw !== null && maxOpens === null) return fail(res, 400, 'Лимит открытий должен быть положительным целым числом или пустым');
+      updates.push('max_opens=?'); args.push(maxOpens);
+    }
+    if (nextActive) {
+      const available = await dbFirst(db, 'SELECT COUNT(*) AS n FROM case_items WHERE case_id=? AND (stock_limit IS NULL OR awarded_count < stock_limit)', caseId);
+      if (Number(available?.n || 0) < 1) return fail(res, 400, 'Добавь хотя бы один доступный предмет перед активацией кейса');
+    }
+    updates.push('active=?'); args.push(nextActive);
+
     if (Array.isArray(req.body?.items)) {
       for (const item of req.body.items) {
-        const weight = Math.trunc(Number(item.weight));
-        if (!item.id || !Number.isSafeInteger(weight) || weight < 1 || weight > 1000000) return fail(res, 400, 'Укажите существующий item id и корректный вес');
-        await dbRun(db,'UPDATE case_items SET weight=? WHERE id=? AND case_id=?',weight,String(item.id),caseId);
+        const itemId = String(item.id || '');
+        const itemRow = await dbFirst(db, 'SELECT id,case_id FROM case_items WHERE id=? AND case_id=?', itemId, caseId);
+        if (!itemRow) return fail(res, 400, 'Один из предметов больше не относится к выбранному кейсу');
+        const itemUpdates = []; const itemArgs = [];
+        if (item.chancePct !== undefined) {
+          const chancePct = Number(item.chancePct);
+          if (!Number.isFinite(chancePct) || chancePct <= 0 || chancePct > 100) return fail(res, 400, 'Шанс предмета должен быть больше 0 и не больше 100%');
+          itemUpdates.push('weight=?'); itemArgs.push(Math.max(1, Math.round(chancePct * 1000)));
+        } else if (item.weight !== undefined) {
+          const weight = adminInteger(item.weight, 1, 1000000);
+          if (weight === null) return fail(res, 400, 'Некорректный вес выпадения');
+          itemUpdates.push('weight=?'); itemArgs.push(weight);
+        }
+        if (item.valueStars !== undefined) {
+          const valueStars = adminInteger(item.valueStars, 0, 100000000);
+          if (valueStars === null) return fail(res, 400, 'Стоимость предмета должна быть целым числом от 0 до 100 000 000');
+          itemUpdates.push('value_stars=?'); itemArgs.push(valueStars);
+        }
+        if (Object.prototype.hasOwnProperty.call(item, 'stockLimit')) {
+          const raw = item.stockLimit;
+          const stockLimit = raw === '' || raw === null || raw === undefined ? null : adminInteger(raw, 1, 100000000);
+          if (raw !== '' && raw !== null && raw !== undefined && stockLimit === null) return fail(res, 400, 'Количество предмета должно быть положительным целым числом или пустым');
+          itemUpdates.push('stock_limit=?'); itemArgs.push(stockLimit);
+        }
+        if (itemUpdates.length) await dbRun(db, `UPDATE case_items SET ${itemUpdates.join(',')} WHERE id=? AND case_id=?`, ...itemArgs, itemId, caseId);
       }
     }
+    if (updates.length) await dbRun(db, `UPDATE cases SET ${updates.join(',')} WHERE id=?`, ...args, caseId);
     return json(res, 200, { ok:true, case:await dbFirst(db,'SELECT * FROM cases WHERE id=?',caseId) });
   });
 

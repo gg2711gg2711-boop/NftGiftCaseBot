@@ -62,6 +62,19 @@
         <div class="section-heading section-heading-spaced"><h2>Кейсы</h2><button class="text-btn" data-jump="cases">Все кейсы <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
         <div id="case-grid" class="case-grid"></div>
 
+        <section class="catalog-section" aria-labelledby="gift-catalog-title">
+          <div class="section-heading section-heading-spaced"><h2 id="gift-catalog-title">Каталог подарков Telegram</h2><span class="catalog-count" id="gift-catalog-count">0</span></div>
+          <p class="catalog-note">Обычные подарки и NFT из списка GiftSignal. Доступность улучшения показана как справочная отметка из источника и может измениться.</p>
+          <input id="gift-catalog-search" class="catalog-search" type="search" placeholder="Найти подарок…" aria-label="Найти подарок" />
+          <div class="catalog-filter-row" role="group" aria-label="Тип подарка">
+            <button class="catalog-filter selected" data-catalog-filter="all">Все</button>
+            <button class="catalog-filter" data-catalog-filter="nft">NFT</button>
+            <button class="catalog-filter" data-catalog-filter="regular">Обычные</button>
+          </div>
+          <div id="gift-catalog-grid" class="gift-catalog-grid"></div>
+          <p class="catalog-credit">Справочный список: <a href="https://giftsignal.com/spisok-podarkov-v-telegram/" target="_blank" rel="noopener noreferrer">GiftSignal</a>. Изображения NFT загружаются с публичного WebP CDN.</p>
+        </section>
+
         <div class="panel promo-panel">
           <div class="promo-copy"><span class="eyebrow">БОНУСЫ</span><h3>Есть промокод?</h3><p>Активируйте код и получите бонус к коллекции.</p></div>
           <div class="promo-form"><input id="promo-input" maxlength="32" placeholder="Введите код" /><button id="promo-redeem" class="small-primary">Применить</button></div>
@@ -173,6 +186,7 @@
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
   <script src="./config.js"></script>
+  <script src="./gift-catalog.js"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>

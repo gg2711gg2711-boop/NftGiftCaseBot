@@ -70,3 +70,9 @@ npx wrangler login
 - Добавить `BOT_TOKEN` и `TELEGRAM_WEBHOOK_SECRET` через Wrangler secrets, а не в git и не во frontend.
 - Сделать публичный канал `@NftGiftCaseNews` и добавить бота администратором канала для стабильной проверки подписки.
 - Протестировать invoice/payments в Telegram test environment до реального запуска.
+## Gift catalogue
+
+The home screen includes the five ordinary gift images supplied by the project owner (Мишка, Сердце, Кубок, Торт, Роза) and all 136 NFT/collectible entries listed in GiftSignal's Telegram gifts table. NFT artwork is loaded as WebP from the public TG_Photos CDN (jsDelivr); if an asset name is unavailable, the UI tries the TelegramGiftsAssests CDN and then a local fallback. Release dates and upgradeability markers are catalogue references from the source list, not a live guarantee. Prices and case probabilities are intentionally not invented; configure actual rewards separately in the admin tools.
+
+Catalogue source: https://giftsignal.com/spisok-podarkov-v-telegram/
+Image CDN reference: https://github.com/ssamy2/TelegramGiftsAssests

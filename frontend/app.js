@@ -487,6 +487,42 @@
       $('#admin-orders').innerHTML=(result.orders||[]).map(o=>`<div class="admin-order"><span>${esc(o.order_type)} · ${esc(o.status)}<br/><small>${esc(o.telegram_id)}</small></span><strong>${esc(o.amount_xtr)} XTR</strong></div>`).join('')||'Заказов нет';
     } catch(err){toast(err.message,'error');}
   }
+  async function adminBalance(mode = 'add') {
+    if (!S.isAdmin) return toast('Доступ запрещён', 'error');
+
+    const targetId = String($('#admin-user-id')?.value || '').trim();
+    const amount = Number($('#admin-balance-amount')?.value);
+    if (!/^\d{1,20}$/.test(targetId)) return toast('Введи корректный Telegram ID пользователя', 'error');
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) {
+      return toast('Сумма должна быть целым числом от 1 до 1 000 000', 'error');
+    }
+    if (MOCK) return toast('Демо-режим: начисления не сохраняются. Открой опубликованное приложение с подключённым API.', 'error', 5000);
+
+    const creditButton = $('#admin-credit-btn');
+    const debitButton = $('#admin-debit-btn');
+    if (creditButton) creditButton.disabled = true;
+    if (debitButton) debitButton.disabled = true;
+    try {
+      const result = await api('/api/admin/balance', {
+        method: 'POST',
+        body: { telegramId: targetId, amount, mode: mode === 'subtract' ? 'subtract' : 'add' }
+      });
+      const newBalance = Number(result.balance || 0);
+      if (String(S.user?.telegram_id || '') === targetId) {
+        S.balance = newBalance;
+        if (S.user) S.user.balance = newBalance;
+        renderBalance();
+      }
+      const action = mode === 'subtract' ? 'Списано' : 'Начислено';
+      toast(`${action} ${amount} кредитов. Баланс пользователя ${targetId}: ${newBalance.toLocaleString('ru-RU')}`, 'success', 5000);
+    } catch (err) {
+      toast(err.message || 'Не удалось изменить баланс', 'error', 5000);
+    } finally {
+      if (creditButton) creditButton.disabled = false;
+      if (debitButton) debitButton.disabled = false;
+    }
+  }
+
   function fillAdminCase() {
     const caseId=$('#admin-case-select')?.value;
     const base = adminCaseList().find(c=>c.id===caseId) || adminCaseList()[0];

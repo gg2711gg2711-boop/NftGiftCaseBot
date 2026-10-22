@@ -132,31 +132,16 @@
   }
 
   async function loadAll() {
-  // Сообщаем Telegram, что интерфейс готов к показу.
-  if (tg) {
-    try {
-      tg.ready();
-      tg.expand();
-
-      try {
-        tg.setHeaderColor('#171a29');
-        tg.setBackgroundColor('#0f1016');
-        tg.setBottomBarColor('#171a29');
-      } catch (_) {}
-    } catch (err) {
-      console.warn('Telegram WebApp init failed', err);
+    if (MOCK) {
+      initMock(); renderAll();
+      showDemoNotice();
+      return;
     }
-  }
-
-  // Деморежим проверяется только после инициализации Telegram.
-  if (MOCK) {
-    initMock();
-    renderAll();
-    showDemoNotice();
-    return;
-  }
-
-  try {
+    if (tg) {
+      tg.ready(); tg.expand();
+      try { tg.setHeaderColor('#171a29'); tg.setBackgroundColor('#0f1016'); tg.setBottomBarColor('#171a29'); } catch { /* old Telegram client */ }
+    }
+    try {
       const [config, me, cases, wins, inventory, event] = await Promise.all([
         api('/api/config'), api('/api/me'), api('/api/cases'), api('/api/live-wins'), api('/api/inventory'), api('/api/event')
       ]);
@@ -232,9 +217,16 @@
     const wins = S.wins?.length ? S.wins : mockWins;
     $('#live-feed').innerHTML = wins.slice(0,12).map(w => `<div class="live-card"><img loading="lazy" src="${imageSrc(w.image_url)}" alt=""/><span><b>${esc(w.username ? '@'+w.username : 'Player')} · ${esc(w.item_title)}</b><small>${esc(money(w.value_stars))}</small></span></div>`).join('');
   }
+  function syncAdminNavigation() {
+    const adminNav = $('#admin-nav-item');
+    if (adminNav) adminNav.classList.toggle('hidden', !S.isAdmin);
+    const adminShortcut = $('#admin-shortcut-wrap');
+    if (adminShortcut) adminShortcut.classList.toggle('hidden', !S.isAdmin);
+  }
+
   function renderAll() {
     renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent();
-    if (S.isAdmin) $('#admin-shortcut-wrap').classList.remove('hidden');
+    syncAdminNavigation();
   }
 
   function openCase(caseId) {

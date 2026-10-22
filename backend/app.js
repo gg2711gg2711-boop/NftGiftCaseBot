@@ -92,7 +92,7 @@ async function syncUser(db, tgUser, startParam = '') {
       const result = await dbRun(db, 'INSERT OR IGNORE INTO referrals(referrer_id,referred_id) VALUES(?,?)', match[1], telegramId);
       if ((result.meta?.changes || 0) > 0) {
         await dbRun(db, 'UPDATE users SET referrer_id=? WHERE telegram_id=? AND referrer_id IS NULL', match[1], telegramId);
-        await dbRun(db, 'UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id=\'refer_1\'', match[1]);
+        await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id IN (SELECT quest_id FROM quest_trigger_rules WHERE trigger_event='referral')`, match[1]);
       }
     }
   }
@@ -115,7 +115,22 @@ function requireTelegram(req, res, next) {
     }
     const { user, startParam } = validateTelegramInitData(raw, env.BOT_TOKEN);
     req.user = await syncUser(db, user, startParam);
-    next();
+    const path = String(req.path || '');
+    const isAdmin = String(req.user?.telegram_id) === String(env.ADMIN_ID || ADMIN_ID_FALLBACK);
+    // The subscription status and config endpoints must remain reachable so the client can show a gate.
+    if (!isAdmin && !['/config', '/subscription/status'].includes(path)) {
+      let subscribed = false;
+      try { subscribed = await requireSubscription(req, req.user.telegram_id); } catch (subscriptionError) {
+        console.warn('Subscription check failed:', subscriptionError?.message || subscriptionError);
+      }
+      if (!subscribed) return json(res, 403, {
+        ok: false,
+        error: 'SUBSCRIPTION_REQUIRED',
+        message: 'Сначала подпишитесь на канал @NftGiftCaseNews, затем нажмите «Проверить подписку».',
+        channel: env.SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews'
+      });
+    }
+    return next();
   })().catch((err) => fail(res, 401, err.message || 'Telegram authorization failed'));
 }
 
@@ -128,10 +143,25 @@ function requireAdmin(req, res, next) {
 
 async function requireSubscription(req, telegramId) {
   const env = envOf(req);
-  if (env.DEV_AUTH === 'true') return true;
+  if (env.DEV_AUTH === 'true' || String(telegramId) === String(env.ADMIN_ID || ADMIN_ID_FALLBACK)) return true;
+  const db = dbOf(req);
+  const userId = String(telegramId);
+  // Short cache avoids calling getChatMember for every API request while still refreshing membership regularly.
+  if (db) {
+    try {
+      const cached = await dbFirst(db, 'SELECT is_subscribed,checked_at FROM subscription_status_cache WHERE telegram_id=?', userId);
+      if (cached?.checked_at && Date.now() - new Date(cached.checked_at).getTime() < 60_000) return Number(cached.is_subscribed) === 1;
+    } catch { /* Continue with live verification before the migration is applied. */ }
+  }
   const channel = env.SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews';
-  const member = await telegramCall(env, 'getChatMember', { chat_id: channel, user_id: Number(telegramId) });
-  return ['creator', 'administrator', 'member'].includes(member.status) || (member.status === 'restricted' && member.is_member === true);
+  const member = await telegramCall(env, 'getChatMember', { chat_id: channel, user_id: Number(userId) });
+  const subscribed = ['creator', 'administrator', 'member'].includes(member.status) || (member.status === 'restricted' && member.is_member === true);
+  if (db) {
+    try { await dbRun(db, `INSERT INTO subscription_status_cache(telegram_id,is_subscribed,checked_at) VALUES(?,?,?)
+      ON CONFLICT(telegram_id) DO UPDATE SET is_subscribed=excluded.is_subscribed,checked_at=excluded.checked_at`, userId, subscribed ? 1 : 0, nowIso()); }
+    catch { /* The check still works without the optional cache table. */ }
+  }
+  return subscribed;
 }
 
 async function getDrop(db, caseId) {
@@ -157,7 +187,7 @@ async function awardDrop(db, telegramId, item, source = 'case') {
   await dbRun(db, 'INSERT INTO live_wins(telegram_id,username,item_title,image_url,value_stars) SELECT ?,COALESCE(username,\'Player\'),?,?,? FROM users WHERE telegram_id=?', telegramId, item.title, item.image_url, item.value_stars, telegramId);
   if (source !== 'upgrade' && source !== 'battle_pass' && source !== 'advent' && source !== 'admin') {
     await dbRun(db, 'UPDATE cases SET opened_count=opened_count+1 WHERE id=(SELECT case_id FROM case_items WHERE id=?)', item.id);
-    await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id IN ('open_1','open_5')`, telegramId);
+    await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id IN (SELECT quest_id FROM quest_trigger_rules WHERE trigger_event='case_open')`, telegramId);
   }
   await dbRun(db, `UPDATE event_progress SET xp=xp+10,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`, telegramId);
   return inventoryId;
@@ -242,6 +272,114 @@ async function processSuccessfulPayment(env, db, message, sp) {
   return { duplicate: false, order };
 }
 
+async function answerCallback(env, callbackQueryId, text, showAlert = false) {
+  try { await telegramCall(env, 'answerCallbackQuery', { callback_query_id: callbackQueryId, text, show_alert: showAlert }); }
+  catch (err) { console.warn('Callback acknowledgement failed:', err.message); }
+}
+
+async function handleTelegramCallback(env, callback) {
+  const data = String(callback?.data || '');
+  const actorId = String(callback?.from?.id || '');
+  const adminId = String(env.ADMIN_ID || ADMIN_ID_FALLBACK);
+
+  if (data === 'check_subscription') {
+    // Force a fresh membership check when the user returns from the channel.
+    if (env.DB) { try { await dbRun(env.DB, 'DELETE FROM subscription_status_cache WHERE telegram_id=?', actorId); } catch { /* cache table may not exist yet */ } }
+    let subscribed = false;
+    try { subscribed = await requireSubscription({ cfEnv: env }, actorId); }
+    catch (err) { console.warn('Subscription callback check failed:', err.message); }
+    if (!subscribed) {
+      await answerCallback(env, callback.id, 'Подписка пока не найдена. Подпишитесь на канал и нажмите ещё раз.', true);
+      return;
+    }
+    await answerCallback(env, callback.id, 'Подписка подтверждена!');
+    const chatId = callback.message?.chat?.id;
+    const messageId = callback.message?.message_id;
+    if (chatId && messageId && env.PUBLIC_APP_URL) {
+      await telegramCall(env, 'editMessageText', {
+        chat_id: chatId,
+        message_id: messageId,
+        text: '✅ Подписка подтверждена! Теперь можно открыть NftGiftCase.',
+        reply_markup: { inline_keyboard: [[{ text: '🎁 Открыть NftGiftCase', web_app: { url: env.PUBLIC_APP_URL } }]] }
+      });
+    }
+    return;
+  }
+
+  const withdrawalMatch = /^withdraw_(approve|reject):([0-9a-f-]{36})$/i.exec(data);
+  if (!withdrawalMatch) {
+    await answerCallback(env, callback.id, 'Эта кнопка больше не активна.');
+    return;
+  }
+  if (actorId !== adminId) {
+    await answerCallback(env, callback.id, 'Только администратор может обрабатывать выводы.', true);
+    return;
+  }
+  if (!env.DB) {
+    await answerCallback(env, callback.id, 'База данных недоступна.', true);
+    return;
+  }
+
+  const action = withdrawalMatch[1].toLowerCase();
+  const withdrawalId = withdrawalMatch[2];
+  const withdrawal = await dbFirst(env.DB,
+    `SELECT w.id,w.telegram_id,w.inventory_id,w.status,u.username,ci.title AS item_title
+     FROM withdrawals w JOIN users u ON u.telegram_id=w.telegram_id
+     JOIN inventory inv ON inv.id=w.inventory_id JOIN case_items ci ON ci.id=inv.item_id
+     WHERE w.id=?`, withdrawalId);
+  if (!withdrawal) {
+    await answerCallback(env, callback.id, 'Заявка не найдена.', true);
+    return;
+  }
+  if (withdrawal.status !== 'pending') {
+    await answerCallback(env, callback.id, `Заявка уже обработана: ${withdrawal.status}.`, true);
+    return;
+  }
+
+  if (action === 'approve') {
+    const changed = await dbRun(env.DB,
+      `UPDATE withdrawals SET status='approved',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'`, withdrawalId);
+    if ((changed.meta?.changes || 0) === 0) {
+      await answerCallback(env, callback.id, 'Заявка уже обработана.', true);
+      return;
+    }
+    await dbRun(env.DB,
+      `UPDATE inventory SET status='withdrawn',withdrawn_at=CURRENT_TIMESTAMP WHERE id=? AND telegram_id=? AND status='withdraw_pending'`,
+      withdrawal.inventory_id, withdrawal.telegram_id);
+    try {
+      await telegramCall(env, 'sendMessage', { chat_id: withdrawal.telegram_id,
+        text: `✅ Заявка на вывод подарка «${withdrawal.item_title}» подтверждена администратором. Если фактическая передача подарка ещё не завершена, администратор свяжется с вами.` });
+    } catch (err) { console.warn('Could not notify user about approved withdrawal:', err.message); }
+    await answerCallback(env, callback.id, 'Вывод подтверждён.');
+    const chatId = callback.message?.chat?.id; const messageId = callback.message?.message_id;
+    if (chatId && messageId) await telegramCall(env, 'editMessageText', {
+      chat_id: chatId, message_id: messageId,
+      text: `${callback.message.text || 'Заявка на вывод подарка'}\n\n✅ ВЫВОД ПОДТВЕРЖДЁН`, parse_mode: 'HTML'
+    });
+    return;
+  }
+
+  const changed = await dbRun(env.DB,
+    `UPDATE withdrawals SET status='rejected',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'`, withdrawalId);
+  if ((changed.meta?.changes || 0) === 0) {
+    await answerCallback(env, callback.id, 'Заявка уже обработана.', true);
+    return;
+  }
+  await dbRun(env.DB,
+    `UPDATE inventory SET status='owned' WHERE id=? AND telegram_id=? AND status='withdraw_pending'`,
+    withdrawal.inventory_id, withdrawal.telegram_id);
+  try {
+    await telegramCall(env, 'sendMessage', { chat_id: withdrawal.telegram_id,
+      text: `❌ Заявка на вывод подарка «${withdrawal.item_title}» отклонена. Подарок возвращён в ваш инвентарь.` });
+  } catch (err) { console.warn('Could not notify user about rejected withdrawal:', err.message); }
+  await answerCallback(env, callback.id, 'Заявка отклонена, подарок возвращён игроку.');
+  const chatId = callback.message?.chat?.id; const messageId = callback.message?.message_id;
+  if (chatId && messageId) await telegramCall(env, 'editMessageText', {
+    chat_id: chatId, message_id: messageId,
+    text: `${callback.message.text || 'Заявка на вывод подарка'}\n\n❌ ВЫВОД ОТКЛОНЁН · ПОДАРОК ВОЗВРАЩЁН`, parse_mode: 'HTML'
+  });
+}
+
 export function createApp(envProvider = () => ({})) {
   const app = express();
   app.disable('x-powered-by');
@@ -278,18 +416,45 @@ export function createApp(envProvider = () => ({})) {
           ...(!valid ? { error_message: 'Заказ не найден или устарел. Закройте оплату и создайте новый заказ.' } : {})
         });
       }
+      if (update.callback_query) {
+        await handleTelegramCallback(env, update.callback_query);
+        return json(res, 200, { ok: true });
+      }
       const message = update.message;
       if (message?.text && !message.successful_payment) {
         const command = message.text.trim().split(/\s+/)[0].split('@')[0];
-        if (command === '/start' || command === '/help') {
-          // Record /start payload referrals immediately; the invited user need not open the Mini App first.
-          if (command === '/start' && message.from && env.DB) {
+        if (command === '/start') {
+          if (message.from && env.DB) {
             const startPayload = message.text.trim().split(/\s+/)[1] || '';
             await syncUser(env.DB, message.from, startPayload);
           }
-          const appUrl = env.PUBLIC_APP_URL;
-          const replyMarkup = appUrl ? { inline_keyboard: [[{ text: 'Открыть NftGiftCase', web_app: { url: appUrl } }]] } : undefined;
-          await telegramCall(env, 'sendMessage', { chat_id: message.chat.id, text: 'Добро пожаловать в NftGiftCase. Открывайте кейсы, собирайте цифровые предметы и используйте апгрейдер. Бесплатные подарки требуют подписки на @NftGiftCaseNews. Покупки цифровых товаров проходят только через Telegram Stars.', ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
+          let subscribed = false;
+          try { subscribed = await requireSubscription({ cfEnv: env }, String(message.from?.id || '')); }
+          catch (err) { console.warn('Could not verify subscription in /start:', err.message); }
+          if (!subscribed) {
+            const channelName = String(env.SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews').replace(/^@/, '');
+            await telegramCall(env, 'sendMessage', {
+              chat_id: message.chat.id,
+              text: `👋 Добро пожаловать в NftGiftCase!\n\nЧтобы войти в приложение, сначала подпишитесь на наш Telegram-канал @${channelName}, затем нажмите «✅ Подтвердить подписку».`,
+              reply_markup: { inline_keyboard: [
+                [{ text: '📢 Подписаться на канал', url: `https://t.me/${encodeURIComponent(channelName)}` }],
+                [{ text: '✅ Подтвердить подписку', callback_data: 'check_subscription' }]
+              ] }
+            });
+          } else {
+            const appUrl = env.PUBLIC_APP_URL;
+            const replyMarkup = appUrl ? { inline_keyboard: [[{ text: '🎁 Открыть NftGiftCase', web_app: { url: appUrl } }]] } : undefined;
+            await telegramCall(env, 'sendMessage', {
+              chat_id: message.chat.id,
+              text: '✅ Подписка подтверждена! Добро пожаловать в NftGiftCase. Открывайте кейсы и собирайте подарки.',
+              ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+            });
+          }
+        } else if (command === '/help') {
+          await telegramCall(env, 'sendMessage', {
+            chat_id: message.chat.id,
+            text: 'NftGiftCase: открывайте кейсы, собирайте подарки и выполняйте задания. Для входа в Mini App нужна подписка на @NftGiftCaseNews. Команда /start проверяет подписку, /paysupport — поддержка платежей.'
+          });
         } else if (command === '/paysupport') {
           const support = String(env.SUPPORT_USERNAME || 'sork1555').replace(/^@/, '');
           await telegramCall(env, 'sendMessage', { chat_id: message.chat.id, text: `Поддержка по платежам Telegram Stars: @${support}. Укажите примерное время платежа и приложите Telegram payment charge ID, если он доступен.` });
@@ -297,27 +462,15 @@ export function createApp(envProvider = () => ({})) {
           const senderId = String(message.from?.id || '');
           const adminId = String(env.ADMIN_ID || ADMIN_ID_FALLBACK);
           if (senderId !== adminId) {
-            await telegramCall(env, 'sendMessage', {
-              chat_id: message.chat.id,
-              text: 'Команда /admin доступна только администратору.'
-            });
+            await telegramCall(env, 'sendMessage', { chat_id: message.chat.id, text: 'Команда /admin доступна только администратору.' });
           } else if (!env.PUBLIC_APP_URL) {
-            await telegramCall(env, 'sendMessage', {
-              chat_id: message.chat.id,
-              text: 'Не настроен адрес приложения PUBLIC_APP_URL.'
-            });
+            await telegramCall(env, 'sendMessage', { chat_id: message.chat.id, text: 'Не настроен адрес приложения PUBLIC_APP_URL.' });
           } else {
             const adminUrl = new URL(env.PUBLIC_APP_URL);
             adminUrl.searchParams.set('admin', '1');
             await telegramCall(env, 'sendMessage', {
-              chat_id: message.chat.id,
-              text: 'Панель администратора NftGiftCase:',
-              reply_markup: {
-                inline_keyboard: [[{
-                  text: 'Открыть админку',
-                  web_app: { url: adminUrl.toString() }
-                }]]
-              }
+              chat_id: message.chat.id, text: 'Панель администратора NftGiftCase:',
+              reply_markup: { inline_keyboard: [[{ text: 'Открыть админку', web_app: { url: adminUrl.toString() } }]] }
             });
           }
         }
@@ -388,6 +541,7 @@ export function createApp(envProvider = () => ({})) {
 
   app.get('/api/subscription/status', async (req, res) => {
     try {
+      if (req.query?.refresh === '1') { try { await dbRun(dbOf(req), 'DELETE FROM subscription_status_cache WHERE telegram_id=?', String(req.user.telegram_id)); } catch { /* cache table may not exist yet */ } }
       const subscribed = await requireSubscription(req, req.user.telegram_id);
       return json(res, 200, { ok: true, subscribed, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews' });
     } catch (err) { return json(res, 200, { ok: true, subscribed: false, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews', error: err.message }); }
@@ -406,7 +560,7 @@ export function createApp(envProvider = () => ({})) {
       const { drop } = await getDrop(db, caseId);
       const inventoryId = await awardDrop(db, userId, drop, caseId === 'daily' ? 'daily' : 'free_bonus');
       await dbRun(db, 'UPDATE free_daily_claims SET inventory_id=? WHERE telegram_id=? AND claim_date=? AND reward_key=?', inventoryId, userId, day, caseId);
-      if (caseId === 'daily') await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id='daily_1'`, userId);
+      if (caseId === 'daily') await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id IN (SELECT quest_id FROM quest_trigger_rules WHERE trigger_event='daily_claim')`, userId);
       return json(res, 200, { ok: true, item: drop, inventoryId });
     } catch (err) { return fail(res, 400, err.message); }
   };
@@ -501,7 +655,13 @@ export function createApp(envProvider = () => ({})) {
     const safeName = String(user.first_name || 'Player').replace(/[&<>\"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]));
     const safeTitle = String(item.title).replace(/[&<>\"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[ch]));
     const text = `<b>Заявка на вывод подарка</b>\nИгрок: ${safeName}\nID: <code>${user.telegram_id}</code>\nUsername: ${mention}\nПредмет: ${safeTitle}\nТип: ${item.kind}\nЗаявка: <code>${wid}</code>`;
-    await notifyAdmin(envOf(req), text, { inline_keyboard: [[{ text: 'Написать пользователю', url: `https://t.me/${encodeURIComponent(user.username)}` }]] });
+    await notifyAdmin(envOf(req), text, { inline_keyboard: [
+      [{ text: 'Написать пользователю', url: `https://t.me/${encodeURIComponent(user.username)}` }],
+      [
+        { text: '✅ Подтвердить вывод', callback_data: `withdraw_approve:${wid}` },
+        { text: '❌ Отказать вывод', callback_data: `withdraw_reject:${wid}` }
+      ]
+    ] });
     return json(res, 201, { ok: true, message: 'Заявка отправлена администратору. Вывод выполняется вручную после проверки.' });
   });
 
@@ -530,18 +690,22 @@ export function createApp(envProvider = () => ({})) {
     const progress = await dbFirst(db, 'SELECT xp,premium_unlocked,claimed_free_levels,claimed_premium_levels FROM event_progress WHERE telegram_id=?', userId);
     const quests = await dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,COALESCE(u.progress,0) AS progress,COALESCE(u.claimed,0) AS claimed FROM quests q LEFT JOIN user_quests u ON u.quest_id=q.id AND u.telegram_id=? WHERE q.active=1 ORDER BY q.id`, userId);
     const rewards = await dbAll(db, `SELECT er.event_type,er.branch,er.level,er.item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id ORDER BY er.event_type,er.branch,er.level`);
+    const starRewards = await dbAll(db, `SELECT event_type,branch,level,amount FROM event_star_rewards ORDER BY event_type,branch,level`);
     const rewardMap = new Map(rewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
+    const starRewardMap = new Map(starRewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
     const adventDefaults = ['daily-teddy','daily-rocket','daily-perfume','daily-ring'];
     const today = new Date();
     const isAdventSeason = today.getUTCMonth() === 11;
     const calendar = await Promise.all(Array.from({length:24}, async (_,i) => {
       const day = i + 1;
+      const starReward = starRewardMap.get(`advent:advent:${day}`);
+      if (starReward) return { day, title:`${Number(starReward.amount).toLocaleString('ru-RU')} ★`, reward_type:'credits', amount:Number(starReward.amount), image_url:'gift-box.png', unlocked:isAdventSeason && day <= today.getUTCDate() };
       const configured = rewardMap.get(`advent:advent:${day}`);
       const itemId = configured?.item_id || adventDefaults[(day - 1) % adventDefaults.length];
       const item = configured || await dbFirst(db, 'SELECT id AS item_id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
-      return { day, title:item?.title || `Подарок ${day}`, item_id:item?.item_id || itemId, image_url:item?.image_url || ['gift-box.png','nft-swan.png','rocket.png','perfume.png'][(day-1)%4], kind:item?.kind || 'gift', value_stars:item?.value_stars || 0, unlocked:isAdventSeason && day <= today.getUTCDate() };
+      return { day, title:item?.title || `Подарок ${day}`, reward_type:'gift', item_id:item?.item_id || itemId, image_url:item?.image_url || ['gift-box.png','nft-swan.png','rocket.png','perfume.png'][(day-1)%4], kind:item?.kind || 'gift', value_stars:item?.value_stars || 0, unlocked:isAdventSeason && day <= today.getUTCDate() };
     }));
-    return json(res, 200, { ok:true, settings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, calendar, rewards });
+    return json(res, 200, { ok:true, settings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, calendar, rewards, starRewards });
   });
 
   app.post('/api/event/quests/:questId/claim', async (req, res) => {
@@ -568,6 +732,14 @@ export function createApp(envProvider = () => ({})) {
     let claimed = [];
     try { claimed = JSON.parse(progress?.[field] || '[]'); } catch { claimed = []; }
     if (claimed.includes(level)) return fail(res, 409, 'Награда уже получена');
+    const starReward = await dbFirst(db, `SELECT amount FROM event_star_rewards WHERE event_type='battle_pass' AND branch=? AND level=?`, branch, level);
+    if (starReward) {
+      claimed.push(level);
+      await dbRun(db, `UPDATE event_progress SET ${field}=?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`, JSON.stringify(claimed), telegramId);
+      await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', Number(starReward.amount), telegramId);
+      const updatedUser = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', telegramId);
+      return json(res, 200, { ok:true, rewardType:'credits', amount:Number(starReward.amount), balance:Number(updatedUser?.balance||0), message:`Получено ${Number(starReward.amount)} внутренних кредитов (★)` });
+    }
     const configuredReward = await dbFirst(db, `SELECT ci.* FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id WHERE er.event_type='battle_pass' AND er.branch=? AND er.level=?`, branch, level);
     const chosenId = branch === 'premium' && level === 30 ? 'legend-swan'
       : branch === 'premium' ? ['nft-swan-item','nft-ring-item','nft-rocket-item'][level % 3]
@@ -590,6 +762,15 @@ export function createApp(envProvider = () => ({})) {
     if (!event?.enabled || event.event_type !== 'advent' || (event.ends_at && new Date(event.ends_at).getTime() <= Date.now())) return fail(res, 409, 'Адвент-календарь завершён или выключен');
     const today = new Date();
     if (!Number.isSafeInteger(day) || day < 1 || day > 24 || today.getUTCMonth() !== 11 || day > today.getUTCDate()) return fail(res, 409, 'Эта ячейка пока закрыта: ячейки открываются по дням декабря.');
+    const starReward = await dbFirst(db, `SELECT amount FROM event_star_rewards WHERE event_type='advent' AND branch='advent' AND level=?`, day);
+    if (starReward) {
+      const claim = await dbRun(db, 'INSERT OR IGNORE INTO advent_claims(telegram_id,day) VALUES(?,?)', telegramId, day);
+      if ((claim.meta?.changes || 0) === 0) return fail(res, 409, 'Вы уже открыли эту ячейку');
+      await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', Number(starReward.amount), telegramId);
+      await dbRun(db, 'UPDATE event_progress SET xp=xp+10,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', telegramId);
+      const updatedUser = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', telegramId);
+      return json(res, 200, { ok:true, rewardType:'credits', amount:Number(starReward.amount), balance:Number(updatedUser?.balance||0), message:`Получено ${Number(starReward.amount)} внутренних кредитов (★)` });
+    }
     const configuredReward = await dbFirst(db, `SELECT ci.* FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id WHERE er.event_type='advent' AND er.branch='advent' AND er.level=?`, day);
     const defaultIds = ['daily-teddy','daily-rocket','daily-perfume','daily-ring'];
     const drop = configuredReward || await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', defaultIds[(day - 1) % defaultIds.length]);
@@ -661,21 +842,22 @@ export function createApp(envProvider = () => ({})) {
   // Admin API: all write operations are protected server-side by Telegram ID.
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
     const db = dbOf(req);
-    const [userCount, orders, withdrawals, cases, promos, rewardCatalog] = await Promise.all([
+    const [userCount, orders, withdrawals, cases, promos, rewardCatalog, quests] = await Promise.all([
       dbFirst(db, 'SELECT COUNT(*) AS n FROM users'),
       dbAll(db, 'SELECT id,telegram_id,order_type,amount_xtr,status,created_at,paid_at FROM orders ORDER BY created_at DESC LIMIT 30'),
       dbAll(db, `SELECT w.id,w.status,w.created_at,u.telegram_id,u.username,ci.title AS item_title FROM withdrawals w JOIN users u ON u.telegram_id=w.telegram_id JOIN inventory inv ON inv.id=w.inventory_id JOIN case_items ci ON ci.id=inv.item_id ORDER BY w.created_at DESC LIMIT 30`),
       // Hide internal daily reward cases and retired sample crates from the owner's case builder.
       dbAll(db, `SELECT c.* FROM cases c WHERE c.id NOT IN ('daily','nft-mini','crate-blue','crate-orange','legend') ORDER BY c.sort_order,c.created_at`),
       dbAll(db, 'SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 30'),
-      dbAll(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items ORDER BY title,id')
+      dbAll(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items ORDER BY title,id'),
+      dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,q.active,COALESCE(t.trigger_event,'manual') AS trigger_event FROM quests q LEFT JOIN quest_trigger_rules t ON t.quest_id=q.id ORDER BY q.id`)
     ]);
     const detailedCases = await Promise.all(cases.map(async c => ({
       ...c,
       items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY created_at,id', c.id)
     })));
     const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween Pass',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog });
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests });
   });
 
   app.post('/api/admin/cases', requireAdmin, async (req, res) => {
@@ -888,9 +1070,10 @@ export function createApp(envProvider = () => ({})) {
   app.patch('/api/admin/global-display', requireAdmin, async (req, res) => {
     const db = dbOf(req);
     try {
-      const messageEnabled = req.body?.messageEnabled ? 1 : 0;
       const messageTitle = String(req.body?.messageTitle || 'Новости NftGiftCase').trim().slice(0, 70);
       const messageBody = String(req.body?.messageBody || '').trim().slice(0, 260);
+      // Do not reject the entire save when the message is blank: save the timer independently.
+      const messageEnabled = req.body?.messageEnabled && messageBody ? 1 : 0;
       const timerEnabled = req.body?.timerEnabled ? 1 : 0;
       const timerTitle = String(req.body?.timerTitle || 'До завершения события').trim().slice(0, 80);
       const rawTimerEnd = req.body?.timerEndsAt;
@@ -914,15 +1097,71 @@ export function createApp(envProvider = () => ({})) {
     const eventType = req.body?.eventType === 'advent' ? 'advent' : 'battle_pass';
     const branch = String(req.body?.branch || 'free');
     const level = adminInteger(req.body?.level, 1, eventType === 'advent' ? 24 : 30);
+    const rewardType = req.body?.rewardType === 'credits' ? 'credits' : 'gift';
+    const amount = rewardType === 'credits' ? adminInteger(req.body?.amount, 1, 1000000) : null;
     const itemId = String(req.body?.itemId || '').trim();
     const validBranch = eventType === 'advent' ? branch === 'advent' : ['free','premium'].includes(branch);
     if (!validBranch) return fail(res, 400, 'Неверная ветка наград для выбранного события');
     if (level === null) return fail(res, 400, eventType === 'advent' ? 'День должен быть от 1 до 24' : 'Уровень должен быть от 1 до 30');
+    if (rewardType === 'credits') {
+      if (amount === null) return fail(res, 400, 'Количество внутренних кредитов должно быть от 1 до 1 000 000');
+      await dbRun(db, 'DELETE FROM event_rewards WHERE event_type=? AND branch=? AND level=?', eventType, branch, level);
+      await dbRun(db, `INSERT INTO event_star_rewards(event_type,branch,level,amount,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(event_type,branch,level) DO UPDATE SET amount=excluded.amount,updated_at=CURRENT_TIMESTAMP`, eventType, branch, level, amount);
+      return json(res, 200, { ok:true, eventType, branch, level, rewardType:'credits', amount, message:`Награда сохранена: ${amount} внутренних кредитов (★)` });
+    }
     const item = await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
     if (!item) return fail(res, 404, 'Выбранный подарок не найден в каталоге');
+    await dbRun(db, 'DELETE FROM event_star_rewards WHERE event_type=? AND branch=? AND level=?', eventType, branch, level);
     await dbRun(db, `INSERT INTO event_rewards(event_type,branch,level,item_id,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(event_type,branch,level) DO UPDATE SET item_id=excluded.item_id,updated_at=CURRENT_TIMESTAMP`, eventType,branch,level,itemId);
-    return json(res, 200, { ok:true, eventType, branch, level, item });
+    return json(res, 200, { ok:true, eventType, branch, level, rewardType:'gift', item });
+  });
+
+  // Admin quest editor. Existing progress is preserved; all current users receive a row for a new quest.
+  app.post('/api/admin/quests', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    const questId = String(req.body?.id || '').trim().toLowerCase();
+    const title = String(req.body?.title || '').trim();
+    const description = String(req.body?.description || '').trim().slice(0, 220);
+    const target = adminInteger(req.body?.target, 1, 100000);
+    const rewardXp = adminInteger(req.body?.rewardXp, 1, 100000);
+    const triggerEvent = ['case_open','daily_claim','referral','manual'].includes(String(req.body?.triggerEvent)) ? String(req.body.triggerEvent) : 'manual';
+    const active = req.body?.active ? 1 : 0;
+    if (!/^[a-z0-9_-]{2,40}$/.test(questId)) return fail(res, 400, 'ID квеста: латинские буквы, цифры, _ и -, длина 2–40');
+    if (title.length < 2 || title.length > 80 || !description) return fail(res, 400, 'Название и описание квеста обязательны');
+    if (target === null || rewardXp === null) return fail(res, 400, 'Цель и награда XP должны быть в диапазоне 1–100 000');
+    await dbRun(db, `INSERT INTO quests(id,title,description,target,reward_xp,active) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(id) DO UPDATE SET title=excluded.title,description=excluded.description,target=excluded.target,reward_xp=excluded.reward_xp,active=excluded.active`, questId,title,description,target,rewardXp,active);
+    await dbRun(db, 'INSERT OR IGNORE INTO user_quests(telegram_id,quest_id) SELECT telegram_id,? FROM users', questId);
+    await dbRun(db, `INSERT INTO quest_trigger_rules(quest_id,trigger_event) VALUES(?,?) ON CONFLICT(quest_id) DO UPDATE SET trigger_event=excluded.trigger_event`, questId, triggerEvent);
+    const quest = await dbFirst(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,q.active,COALESCE(t.trigger_event,'manual') AS trigger_event FROM quests q LEFT JOIN quest_trigger_rules t ON t.quest_id=q.id WHERE q.id=?`, questId);
+    return json(res, 200, { ok:true, quest });
+  });
+
+  // Admin Abuse / global reward drop: grants selected internal credits and/or a selected item to all registered users.
+  app.post('/api/admin/rewards/all', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    const itemId = String(req.body?.itemId || '').trim();
+    const hasAmount = req.body?.amount !== undefined && req.body?.amount !== null && req.body?.amount !== '';
+    const amount = hasAmount ? adminInteger(req.body.amount, 1, 1000000) : null;
+    if (!itemId && !hasAmount) return fail(res, 400, 'Выбери подарок, количество кредитов или оба варианта');
+    if (hasAmount && amount === null) return fail(res, 400, 'Сумма кредитов должна быть от 1 до 1 000 000');
+    const userCount = Number((await dbFirst(db, 'SELECT COUNT(*) AS n FROM users'))?.n || 0);
+    if (userCount < 1) return fail(res, 409, 'Пока нет зарегистрированных игроков');
+    let item = null; let awarded = 0;
+    if (itemId) {
+      item = await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
+      if (!item) return fail(res, 404, 'Выбранный подарок не найден в каталоге');
+    }
+    if (amount !== null) await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP', amount);
+    if (item) {
+      const inserted = await dbRun(db, `INSERT INTO inventory(id,telegram_id,item_id,source,status)
+        SELECT lower(hex(randomblob(16))),telegram_id,?,'admin_global','owned' FROM users`, item.id);
+      awarded = Number(inserted.meta?.changes || userCount);
+      await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+? WHERE id=?', awarded, item.id);
+    }
+    return json(res, 200, { ok:true, recipients:userCount, balancePerUser:amount || 0, item:item ? { ...item } : null, giftsAwarded:awarded, message:`Глобальная раздача завершена: игроков ${userCount}${amount ? `, начислено ${amount} кредитов каждому` : ''}${item ? `, подарок «${item.title}» выдан каждому` : ''}.` });
   });
 
   app.use((err, req, res, next) => {

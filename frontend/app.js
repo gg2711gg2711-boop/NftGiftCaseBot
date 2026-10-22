@@ -71,7 +71,12 @@
     const response = await fetch(`${API_BASE}${path}`, { ...options, headers, body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body });
     let data = {};
     try { data = await response.json(); } catch { /* no JSON */ }
-    if (!response.ok || data.ok === false) throw new Error(data.error || `Ошибка API (${response.status})`);
+    if (!response.ok || data.ok === false) {
+      const error = new Error(data.message || data.error || `Ошибка API (${response.status})`);
+      error.code = data.error || data.code || '';
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
 
@@ -152,7 +157,12 @@
       if (S.isAdmin) { $('#admin-shortcut-wrap').classList.remove('hidden'); }
       if (!currentInitData()) toast('Откройте приложение из Telegram-бота для авторизации.', 'error', 5000);
     } catch (err) {
-      renderAll(); toast(`Не удалось загрузить данные: ${err.message}`, 'error', 6500);
+      renderAll();
+      if (err.code === 'SUBSCRIPTION_REQUIRED') {
+        showMandatorySubscriptionModal(err.message);
+        return;
+      }
+      toast(`Не удалось загрузить данные: ${err.message}`, 'error', 6500);
       if (!currentInitData()) openModal(`<h2 class="modal-title" id="modal-title">Откройте в Telegram</h2><p class="modal-copy">Для реальной авторизации сервер проверяет подписанные данные Telegram. Откройте NftGiftCase через кнопку в боте.</p><button class="primary-btn wide-btn" data-modal-action="telegram-help">Как подключить бота</button>`);
     }
   }
@@ -326,8 +336,22 @@
     openModal(`<h2 class="modal-title" id="modal-title">Подпишитесь на канал</h2><p class="modal-copy">${esc(message)}<br/><br/>1. Подпишитесь на <b>@NftGiftCaseNews</b>.<br/>2. Вернитесь сюда и нажмите «Проверить подписку».</p><div class="modal-actions"><button class="secondary-btn" data-modal-action="subscribe">Открыть канал</button><button class="primary-btn" data-modal-action="check-subscription" data-case-id="${esc(caseId)}">Проверить подписку</button></div>`);
   }
   async function checkSubscription(caseId) {
-    try { const result = await api('/api/subscription/status'); if (!result.subscribed) return toast('Подписка пока не обнаружена. Нажмите «Проверить подписку» ещё раз после подписки.', 'error'); closeModal(); await claimFree(caseId); }
+    try { const result = await api('/api/subscription/status?refresh=1'); if (!result.subscribed) return toast('Подписка пока не обнаружена. Нажмите «Проверить подписку» ещё раз после подписки.', 'error'); closeModal(); await claimFree(caseId); }
     catch (err) { toast(err.message, 'error'); }
+  }
+  function showMandatorySubscriptionModal(message = 'Чтобы пользоваться NftGiftCase, подпишитесь на канал и подтвердите подписку.') {
+    openModal(`<div class="subscription-gate"><div class="subscription-gate-icon">✦</div><h2 class="modal-title" id="modal-title">Подписка обязательна</h2><p class="modal-copy">${esc(message)}<br/><br/>1. Подпишитесь на @NftGiftCaseNews.<br/>2. Вернитесь сюда и нажмите «Подтвердить подписку».</p><div class="modal-actions subscription-gate-actions"><button class="secondary-btn" data-modal-action="subscribe">📢 Открыть канал</button><button class="primary-btn" data-check-global-subscription>✅ Подтвердить подписку</button></div></div>`);
+  }
+  async function checkGlobalSubscription() {
+    try {
+      const result = await api('/api/subscription/status?refresh=1');
+      if (!result.subscribed) return toast('Подписка не найдена. Подпишись на @NftGiftCaseNews и повтори проверку.', 'error', 5000);
+      closeModal();
+      await loadAll();
+    } catch (err) {
+      if (err.code === 'SUBSCRIPTION_REQUIRED') showMandatorySubscriptionModal(err.message);
+      else toast(err.message, 'error', 5000);
+    }
   }
   function chooseMockDrop(c) {
     const items = c?.items || mockItems; const sum = items.reduce((v,i)=>v+Number(i.weight||1),0); let r=Math.random()*sum;
@@ -491,6 +515,9 @@
   function customEventReward(eventType, branch, level) {
     return (S.eventData?.rewards || []).find(r => r.event_type === eventType && r.branch === branch && Number(r.level) === Number(level));
   }
+  function customEventStarReward(eventType, branch, level) {
+    return (S.eventData?.starRewards || []).find(r => r.event_type === eventType && r.branch === branch && Number(r.level) === Number(level));
+  }
   function renderEvent() {
     const data=S.eventData||{}; const settings=data.settings||data.event||mockEvent;
     const beforeEnd = !settings.ends_at || new Date(settings.ends_at).getTime() > Date.now();
@@ -508,15 +535,19 @@
       const freeDone=freeClaimed.includes(level); const premiumDone=premiumClaimed.includes(level);
       const freeConfigured=customEventReward('battle_pass','free',level);
       const premiumConfigured=customEventReward('battle_pass','premium',level);
+      const freeStars=customEventStarReward('battle_pass','free',level);
+      const premiumStars=customEventStarReward('battle_pass','premium',level);
       const freeFallback=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i%5];
       const premiumFallback=level===30?'nft-swan.png':['nft-swan.png','ring.png','rocket.png','perfume.png'][i%4];
       const freeImage=freeConfigured?.image_url?imageSrc(freeConfigured.image_url):asset(freeFallback);
       const premiumImage=premiumConfigured?.image_url?imageSrc(premiumConfigured.image_url):asset(premiumFallback);
+      const freeRewardMarkup=freeStars?`<div class="event-credit-reward"><span>★</span><strong>+${Number(freeStars.amount).toLocaleString('ru-RU')}</strong><small>кредитов</small></div>`:`<img loading="lazy" src="${freeImage}" alt="${esc(freeConfigured?.title || `Бесплатная награда ${level}`)}"/>`;
+      const premiumRewardMarkup=premiumStars?`<div class="event-credit-reward premium-credit-reward"><span>★</span><strong>+${Number(premiumStars.amount).toLocaleString('ru-RU')}</strong><small>кредитов</small></div>`:`<img loading="lazy" src="${premiumImage}" alt="${esc(premiumConfigured?.title || `Premium награда ${level}`)}"/>`;
       const premiumReady=Number(progress.premium_unlocked||0)===1;
-      return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small><img loading="lazy" src="${freeImage}" alt="${esc(freeConfigured?.title || `Бесплатная награда ${level}`)}"/><button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small><img loading="lazy" src="${premiumImage}" alt="${esc(premiumConfigured?.title || `Premium награда ${level}`)}"/><button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
+      return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small>${freeRewardMarkup}<button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small>${premiumRewardMarkup}<button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
     }).join('');
     const quests=data.quests||[];$('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
-    const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong><img src="${imageSrc(d.image_url)}" alt="Подарок дня ${d.day}" /></button>`).join('');
+    const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong>${d.reward_type==='credits'?`<span class="advent-credit-reward">★<b>+${Number(d.amount||0).toLocaleString('ru-RU')}</b></span>`:`<img src="${imageSrc(d.image_url)}" alt="Подарок дня ${d.day}" />`}</button>`).join('');
   }
   async function claimLevel(level, branch='free') {
     if(MOCK) { const p=S.eventData.progress;p.xp=Number(p.xp||0);const needed=level*100;if(p.xp<needed)return toast('Недостаточно XP для этой награды','error');if(branch==='premium'&&!p.premium_unlocked)return toast('Сначала активируйте Premium Pass','error');toast(`DEMO: награда уровня ${level} доступна в полной версии`,'success');return renderEvent(); }
@@ -533,7 +564,7 @@
   }
   async function claimAdventDay(day) {
     if(MOCK) return toast('DEMO: календарь показывает доступные ячейки, выдача включается через API.', 'info');
-    try { const result=await api(`/api/event/advent/${day}/claim`,{method:'POST',body:{}});toast(`Получено: ${result.item.title}`,'success');await refreshUserData(); } catch(err){toast(err.message,'error');}
+    try { const result=await api(`/api/event/advent/${day}/claim`,{method:'POST',body:{}});toast(result.message || `Получено: ${result.item?.title || 'награда'}`,'success');await refreshUserData(); } catch(err){toast(err.message,'error');}
   }
 
   async function loadBattles() {
@@ -562,7 +593,10 @@
     try {
       const [me, cases, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/cases'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
       S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;await loadGlobalDisplay();renderAll();fillAdminRewardSelector();
-    } catch(err) { console.warn(err); }
+    } catch(err) {
+      console.warn(err);
+      if (err.code === 'SUBSCRIPTION_REQUIRED') showMandatorySubscriptionModal(err.message);
+    }
   }
 
   async function shareReferral() {
@@ -616,6 +650,54 @@
     } catch(err) { toast(err.message, 'error', 5500); }
     finally { if (giftBtn) giftBtn.disabled = false; if (comboBtn) comboBtn.disabled = false; }
   }
+  function fillGlobalRewardSelector() {
+    const select=$('#admin-global-reward-item');if(!select)return;
+    const old=select.value;const items=S.adminOverview?.rewardCatalog||[];
+    select.innerHTML='<option value="">Не выдавать подарок</option>'+items.map(item=>`<option value="${esc(item.id)}">${esc(item.title)} · ${esc(money(item.value_stars))}</option>`).join('');
+    if(old&&items.some(item=>String(item.id)===old))select.value=old;
+  }
+  function fillQuestEditor(preferredId='') {
+    const select=$('#admin-quest-select');if(!select)return;
+    const quests=S.adminOverview?.quests||[];const old=preferredId||select.value;
+    select.innerHTML='<option value="">Новый квест…</option>'+quests.map(q=>`<option value="${esc(q.id)}">${esc(q.title)} (${esc(q.id)})${Number(q.active)?'':' · выкл.'}</option>`).join('');
+    if(old&&quests.some(q=>q.id===old))select.value=old;
+    const current=quests.find(q=>q.id===select.value);
+    if(current){$('#admin-quest-id').value=current.id;$('#admin-quest-title').value=current.title;$('#admin-quest-description').value=current.description;$('#admin-quest-target').value=current.target;$('#admin-quest-xp').value=current.reward_xp;$('#admin-quest-trigger').value=current.trigger_event||'manual';$('#admin-quest-active').checked=Boolean(Number(current.active));}
+    else if(!old){$('#admin-quest-id').value='';$('#admin-quest-title').value='';$('#admin-quest-description').value='';$('#admin-quest-target').value='1';$('#admin-quest-xp').value='25';$('#admin-quest-trigger').value='case_open';$('#admin-quest-active').checked=true;}
+  }
+  async function adminSaveQuest() {
+    if(!S.isAdmin)return toast('Доступ запрещён','error');
+    if(MOCK)return toast('DEMO: квест не сохраняется на сервере','error');
+    const payload={id:$('#admin-quest-id').value.trim().toLowerCase(),title:$('#admin-quest-title').value.trim(),description:$('#admin-quest-description').value.trim(),target:Number($('#admin-quest-target').value),rewardXp:Number($('#admin-quest-xp').value),triggerEvent:$('#admin-quest-trigger').value,active:$('#admin-quest-active').checked};
+    if(!payload.id||!payload.title||!payload.description)return toast('Заполни ID, название и описание квеста','error');
+    if(!Number.isSafeInteger(payload.target)||payload.target<1||!Number.isSafeInteger(payload.rewardXp)||payload.rewardXp<1)return toast('Цель и XP должны быть положительными целыми числами','error');
+    const button=$('#admin-quest-save');button.disabled=true;
+    try{const result=await api('/api/admin/quests',{method:'POST',body:payload});toast('Квест сохранён','success');await loadAdmin();fillQuestEditor(result.quest.id);await refreshUserData();}
+    catch(err){toast(err.message,'error',5000);}finally{button.disabled=false;}
+  }
+  let pendingGlobalRewardPayload=null;
+  async function adminGlobalReward() {
+    if(!S.isAdmin)return toast('Доступ запрещён','error');
+    if(MOCK)return toast('DEMO: массовая раздача недоступна','error');
+    const itemId=String($('#admin-global-reward-item').value||'').trim();
+    const rawAmount=$('#admin-global-reward-amount').value.trim();
+    if(!itemId&&!rawAmount)return toast('Выбери подарок и/или укажи кредиты каждому игроку','error');
+    const amount=rawAmount?Number(rawAmount):null;
+    if(rawAmount&&(!Number.isSafeInteger(amount)||amount<1||amount>1000000))return toast('Кредиты должны быть от 1 до 1 000 000 на игрока','error');
+    const count=Number(S.adminOverview?.userCount||0);
+    pendingGlobalRewardPayload={itemId,...(amount!==null?{amount}:{})};
+    const item=(S.adminOverview?.rewardCatalog||[]).find(x=>x.id===itemId);
+    const parts=[];if(item)parts.push(`подарок «${item.title}»`);if(amount!==null)parts.push(`${amount.toLocaleString('ru-RU')} кредитов каждому`);
+    openModal(`<h2 class="modal-title" id="modal-title">💥 Admin Abuse</h2><p class="modal-copy">Подтвердите глобальную раздачу для <b>${count.toLocaleString('ru-RU')}</b> зарегистрированных игроков: ${esc(parts.join(' + '))}. Действие нельзя автоматически отменить.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-global-reward>Раздать всем</button></div>`);
+  }
+  async function confirmGlobalReward() {
+    if(!pendingGlobalRewardPayload)return closeModal();
+    const payload=pendingGlobalRewardPayload;pendingGlobalRewardPayload=null;
+    const button=$('[data-confirm-global-reward]');if(button)button.disabled=true;
+    try{const result=await api('/api/admin/rewards/all',{method:'POST',body:payload});closeModal();toast(result.message||'Глобальная раздача завершена','success',6500);await loadAdmin();await refreshUserData();}
+    catch(err){toast(err.message,'error',6000);}
+  }
+
   async function loadAdmin(preselectId = '') {
     if(!S.isAdmin) { toast('Доступ запрещён','error');return setView('home'); }
     fillGiftSelector();
@@ -639,7 +721,10 @@
       $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=toLocalDateTimeInput(result.event.ends_at);
       try { const gd=await api('/api/global-display'); S.globalDisplay=gd.settings; const v=gd.settings||{};$('#admin-message-enabled').checked=Boolean(Number(v.message_enabled));$('#admin-message-title').value=v.message_title||'Новости NftGiftCase';$('#admin-message-body').value=v.message_body||'';$('#admin-timer-enabled').checked=Boolean(Number(v.timer_enabled));$('#admin-timer-title').value=v.timer_title||'До завершения события';$('#admin-timer-end').value=toLocalDateTimeInput(v.timer_ends_at);renderGlobalDisplay(); } catch(err) { console.warn('Cannot load global display settings:',err.message); }
       syncEventRewardBranch();
+      fillGlobalRewardSelector();
+      fillQuestEditor();
       $('#admin-orders').innerHTML=(result.orders||[]).map(o=>`<div class="admin-order"><span>${esc(o.order_type)} · ${esc(o.status)}<br/><small>${esc(o.telegram_id)}</small></span><strong>${esc(o.amount_xtr)} XTR</strong></div>`).join('')||'Заказов нет';
+      $('#admin-withdrawals').innerHTML=(result.withdrawals||[]).map(w=>`<div class="admin-order"><span><b>${esc(w.item_title||'Подарок')}</b><br/><small>${esc(w.username?'@'+w.username:w.telegram_id)} · ${esc(w.status)}</small></span><strong>${esc(w.id.slice(0,8))}</strong></div>`).join('')||'Заявок на вывод пока нет.';
     } catch(err){toast(err.message,'error');}
   }
   async function adminBalance(mode = 'add') {
@@ -783,8 +868,10 @@
     const rawEnd=$('#admin-timer-end').value;
     const endDate=rawEnd?new Date(rawEnd):null;
     if(rawEnd&&(!endDate||!Number.isFinite(endDate.getTime())))return toast('Проверь дату таймера','error');
-    const payload={messageEnabled:$('#admin-message-enabled').checked,messageTitle:$('#admin-message-title').value.trim()||'Новости NftGiftCase',messageBody:$('#admin-message-body').value.trim(),timerEnabled:$('#admin-timer-enabled').checked,timerTitle:$('#admin-timer-title').value.trim()||'До завершения события',timerEndsAt:endDate?endDate.toISOString():null};
-    if(payload.messageEnabled&&!payload.messageBody)return toast('Включённое сообщение не должно быть пустым','error');
+    const messageBody=$('#admin-message-body').value.trim();
+    const messageEnabled=$('#admin-message-enabled').checked&&Boolean(messageBody);
+    const payload={messageEnabled,messageTitle:$('#admin-message-title').value.trim()||'Новости NftGiftCase',messageBody,timerEnabled:$('#admin-timer-enabled').checked,timerTitle:$('#admin-timer-title').value.trim()||'До завершения события',timerEndsAt:endDate?endDate.toISOString():null};
+    if($('#admin-message-enabled').checked&&!messageBody){$('#admin-message-enabled').checked=false;toast('Текст сообщения пуст — сообщение будет выключено. Настройки таймера всё равно сохранятся.','info',4500);}
     if(payload.timerEnabled&&!payload.timerEndsAt)return toast('Укажи дату окончания таймера','error');
     if(MOCK){S.globalDisplay={message_enabled:+payload.messageEnabled,message_title:payload.messageTitle,message_body:payload.messageBody,timer_enabled:+payload.timerEnabled,timer_title:payload.timerTitle,timer_ends_at:payload.timerEndsAt};renderGlobalDisplay();return toast('DEMO: настройки сохранены только до закрытия окна','info');}
     const button=$('#admin-global-save');button.disabled=true;
@@ -816,22 +903,31 @@
     const branch=$('#admin-reward-branch')?.value||(eventType==='advent'?'advent':'free');
     const level=Math.max(1,Math.trunc(Number($('#admin-reward-level')?.value)||1));
     const saved=customEventReward(eventType,branch,level);
+    const savedCredits=customEventStarReward(eventType,branch,level);
+    const rewardType=$('#admin-event-reward-type');
+    if(rewardType && document.activeElement!==rewardType)rewardType.value=savedCredits&&!saved?'credits':'gift';
+    const selectedType=rewardType?.value||'gift';
+    const giftWrap=$('#admin-event-gift-wrap');const amountWrap=$('#admin-event-amount-wrap');
+    if(giftWrap)giftWrap.classList.toggle('hidden',selectedType==='credits');
+    if(amountWrap)amountWrap.classList.toggle('hidden',selectedType!=='credits');
+    if(savedCredits && $('#admin-event-reward-amount'))$('#admin-event-reward-amount').value=savedCredits.amount;
     const itemId=saved?.item_id||defaultEventRewardId(eventType,branch,level);
     const select=$('#admin-event-reward-item');
     if(select&&[...select.options].some(o=>o.value===itemId))select.value=itemId;
     const option=select?.selectedOptions?.[0];
     const preview=$('#admin-reward-preview');
-    if(preview)preview.textContent=option?`${saved?'Сохранённая награда':'Награда по умолчанию'}: ${option.textContent}`:'Выбери подарок из каталога.';
+    if(preview)preview.textContent=selectedType==='credits'?(savedCredits?`Сохранено: ${Number(savedCredits.amount).toLocaleString('ru-RU')} внутренних кредитов (★)`:'Задай количество внутренних кредитов для награды.'):(option?`${saved?'Сохранённая награда':'Награда по умолчанию'}: ${option.textContent}`:'Выбери подарок из каталога.');
   }
   async function adminSaveEventReward() {
     if(!S.isAdmin)return toast('Доступ запрещён','error');
-    const eventType=$('#admin-reward-event-type').value;const branch=$('#admin-reward-branch').value;const level=Number($('#admin-reward-level').value);const itemId=$('#admin-event-reward-item').value;
+    const eventType=$('#admin-reward-event-type').value;const branch=$('#admin-reward-branch').value;const level=Number($('#admin-reward-level').value);const rewardType=$('#admin-event-reward-type').value;const itemId=$('#admin-event-reward-item').value;const amount=Number($('#admin-event-reward-amount').value);
     const max=eventType==='advent'?24:30;
     if(!Number.isSafeInteger(level)||level<1||level>max)return toast(`Укажи число от 1 до ${max}`,'error');
-    if(!itemId)return toast('Выбери подарок','error');
+    if(rewardType==='gift'&&!itemId)return toast('Выбери подарок','error');
+    if(rewardType==='credits'&&(!Number.isSafeInteger(amount)||amount<1||amount>1000000))return toast('Количество внутренних кредитов должно быть от 1 до 1 000 000','error');
     if(MOCK)return toast('DEMO: награда не сохранена на сервере','error');
     const button=$('#admin-save-event-reward');button.disabled=true;
-    try{const result=await api('/api/admin/event/rewards',{method:'POST',body:{eventType,branch,level,itemId}});toast(`Награда ${eventType==='advent'?'дня':'уровня'} ${level} сохранена: ${result.item.title}`,'success');await refreshUserData();await loadAdmin();syncEventRewardEditor();}
+    try{const result=await api('/api/admin/event/rewards',{method:'POST',body:{eventType,branch,level,rewardType,...(rewardType==='credits'?{amount}:{itemId})}});toast(result.message||`Награда ${eventType==='advent'?'дня':'уровня'} ${level} сохранена`,'success');await refreshUserData();await loadAdmin();syncEventRewardEditor();}
     catch(err){toast(err.message,'error',5500);}
     finally{button.disabled=false;}
   }
@@ -870,10 +966,11 @@
     if(target.matches('[data-sell]')) {showSellConfirm(target.dataset.sell);return;}
     if(target.matches('[data-confirm-sell]')) {sellItem(target.dataset.confirmSell);return;}
     if(target.matches('[data-confirm-withdraw]')) {withdraw(target.dataset.confirmWithdraw);return;}
+    if(target.matches('[data-check-global-subscription]')) {checkGlobalSubscription();return;}
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
     if(target.id==='admin-credit-btn') {adminBalance('add');return;} if(target.id==='admin-debit-btn') {adminBalance('subtract');return;}
     if(target.id==='admin-gift-btn') {adminReward(false);return;} if(target.id==='admin-combo-btn') {adminReward(true);return;}
-    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;} if(target.id==='admin-global-save') {adminSaveGlobalDisplay();return;} if(target.id==='admin-save-event-reward') {adminSaveEventReward();return;}
+    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;} if(target.id==='admin-global-save') {adminSaveGlobalDisplay();return;} if(target.id==='admin-save-event-reward') {adminSaveEventReward();return;} if(target.id==='admin-quest-save') {adminSaveQuest();return;} if(target.id==='admin-global-reward-send') {adminGlobalReward();return;} if(target.matches('[data-confirm-global-reward]')) {confirmGlobalReward();return;}
     if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#pass-levels').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
     if(target.matches('[data-claim-level]')) {claimLevel(Number(target.dataset.claimLevel),target.dataset.branch||'free');return;}
     if(target.matches('[data-claim-quest]')) {claimQuest(target.dataset.claimQuest);return;}
@@ -898,7 +995,8 @@
     if(event.target.id==='admin-case-select')fillAdminCase();
     if(event.target.id==='admin-event-type'&&MOCK){const title=event.target.value==='advent'?'Адвент-календарь':'Halloween Pass';$('#admin-event-title').value=title;}
     if(event.target.id==='admin-reward-event-type'){syncEventRewardBranch();}
-    if(event.target.id==='admin-reward-branch'||event.target.id==='admin-reward-level'){syncEventRewardEditor();}
+    if(event.target.id==='admin-reward-branch'||event.target.id==='admin-reward-level'||event.target.id==='admin-event-reward-type'){syncEventRewardEditor();}
+    if(event.target.id==='admin-quest-select')fillQuestEditor(event.target.value);
   }
 
   // SVG wheel ticks are decorative and are rendered once; all drop images are PNGs from the project asset CDN.

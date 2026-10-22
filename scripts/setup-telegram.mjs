@@ -29,7 +29,7 @@ try {
   const webhook = await call('setWebhook', {
     url: webhookUrl,
     secret_token: webhookSecret,
-    allowed_updates: ['message', 'pre_checkout_query'],
+    allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
     drop_pending_updates: false
   });
   console.log('Webhook configured:', webhook);
@@ -41,7 +41,8 @@ try {
     commands: [
       { command: 'start', description: 'Открыть NftGiftCase' },
       { command: 'help', description: 'Помощь по приложению' },
-      { command: 'paysupport', description: 'Поддержка по платежам Stars' }
+      { command: 'paysupport', description: 'Поддержка по платежам Stars' },
+      { command: 'admin', description: 'Панель администратора' }
     ]
   });
   console.log('Bot commands configured. Open the bot and send /start to verify.');

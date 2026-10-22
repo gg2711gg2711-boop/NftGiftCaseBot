@@ -8,7 +8,7 @@
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
   const S = {
     view: 'home', filter: 'all', search: '', catalogFilter: 'all', catalogSearch: '', cases: [], currentCase: null, quantity: 1,
-    balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null,
+    balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
     adminOverview: null, selectedTarget: null, upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
     demoInventory: [], lastSpin: null, caseSort: false
   };
@@ -117,7 +117,7 @@
   }
 
   function initMock() {
-    S.cases = structuredClone(mockCases); S.wins = mockWins; S.config = { event: mockEvent, channel: '@NftGiftCaseNews' };
+    S.cases = structuredClone(mockCases); S.wins = mockWins; S.config = { event: mockEvent, channel: '@NftGiftCaseNews' }; S.globalDisplay = { message_enabled:0, message_title:'Новости NftGiftCase', message_body:'', timer_enabled:0, timer_title:'До завершения события', timer_ends_at:null };
     S.user = { telegram_id: new URLSearchParams(location.search).get('adminPreview') === '1' ? '1080484217' : '100000001', username: 'demo_player', first_name: 'Demo', balance: 255, free_spins: 1, premium_pass: 0 };
     S.balance = S.user.balance; S.isAdmin = new URLSearchParams(location.search).get('adminPreview') === '1';
     S.eventData = { settings: mockEvent, progress: { xp: 640, premium_unlocked: 0 }, quests: [
@@ -147,6 +147,7 @@
       ]);
       S.config = config; S.user = me.user; S.balance = Number(me.user.balance || 0); S.isAdmin = Boolean(me.isAdmin);
       S.cases = cases.cases; S.wins = wins.wins; S.inventory = inventory.items; S.eventData = event;
+      await loadGlobalDisplay();
       renderAll();
       if (S.isAdmin) { $('#admin-shortcut-wrap').classList.remove('hidden'); }
       if (!currentInitData()) toast('Откройте приложение из Telegram-бота для авторизации.', 'error', 5000);
@@ -212,6 +213,13 @@
     const d = new Date(`${iso}T00:00:00Z`);
     return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
   }
+  function toLocalDateTimeInput(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+    return date.toISOString().slice(0,16);
+  }
   function renderBalance() { $('#balance-value').textContent = Number(S.balance || 0).toLocaleString('ru-RU'); }
   function renderLive() {
     const wins = S.wins?.length ? S.wins : mockWins;
@@ -224,8 +232,47 @@
     if (adminShortcut) adminShortcut.classList.toggle('hidden', !S.isAdmin);
   }
 
+  function renderGlobalDisplay() {
+    const settings = S.globalDisplay || {};
+    const messageEnabled = Boolean(Number(settings.message_enabled ?? settings.messageEnabled ?? 0)) && Boolean(String(settings.message_body ?? settings.messageBody ?? '').trim());
+    const timerEnabled = Boolean(Number(settings.timer_enabled ?? settings.timerEnabled ?? 0));
+    const wrapper = $('#global-display');
+    if (!wrapper) return;
+    wrapper.classList.toggle('hidden', !messageEnabled && !timerEnabled);
+    $('#global-message-card').classList.toggle('hidden', !messageEnabled);
+    $('#global-timer-card').classList.toggle('hidden', !timerEnabled);
+    $('#global-message-title').textContent = String(settings.message_title || settings.messageTitle || 'Новости NftGiftCase');
+    $('#global-message-text').textContent = String(settings.message_body || settings.messageBody || '');
+    $('#global-timer-title').textContent = String(settings.timer_title || settings.timerTitle || 'До завершения события');
+    updateGlobalCountdown();
+  }
+  function updateGlobalCountdown() {
+    const settings = S.globalDisplay || {};
+    const node = $('#global-countdown');
+    if (!node) return;
+    const raw = settings.timer_ends_at || settings.timerEndsAt;
+    const baseTitle = String(settings.timer_title || settings.timerTitle || 'До завершения события');
+    $('#global-timer-title').textContent = baseTitle;
+    if (!raw) { node.textContent = '--:--:--'; return; }
+    const end = new Date(raw).getTime();
+    if (!Number.isFinite(end)) { node.textContent = 'Проверь дату'; return; }
+    const remaining = Math.max(0, end - Date.now());
+    const totalSeconds = Math.floor(remaining / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    node.textContent = days > 0 ? `${days}д ${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}` : `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+    node.classList.toggle('is-expired', totalSeconds === 0);
+    if (totalSeconds === 0) $('#global-timer-title').textContent = `${baseTitle} · завершён`;
+  }
+  async function loadGlobalDisplay() {
+    if (MOCK) { renderGlobalDisplay(); return; }
+    try { const result = await api('/api/global-display'); S.globalDisplay = result.settings || null; renderGlobalDisplay(); }
+    catch (err) { console.warn('Global display is not available yet:', err.message); }
+  }
   function renderAll() {
-    renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent();
+    renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent(); renderGlobalDisplay();
     syncAdminNavigation();
   }
 
@@ -398,7 +445,7 @@
     $('#target-title').textContent=target.title;
     $('#target-value').textContent=`Стоимость ${money(target.value_stars)}`;
     const wheelItem = $('#wheel-item-image');
-    if (wheelItem) { wheelItem.setAttribute('href', src); wheelItem.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', src); wheelItem.setAttribute('aria-label', target.title); }
+    if (wheelItem) { wheelItem.src = src; wheelItem.alt = `Выбранный подарок: ${target.title}`; }
     updateUpgradeChance();
   }
   function updateUpgradeChance() {
@@ -435,6 +482,15 @@
     } catch(err) { $('#upgrade-btn').disabled=false; $('#upgrade-result').textContent='Выберите предмет для апгрейда';toast(err.message,'error'); }
   }
 
+  function defaultEventRewardId(eventType, branch, level) {
+    if (eventType === 'advent') return ['daily-teddy','daily-rocket','daily-perfume','daily-ring'][(level - 1) % 4];
+    if (branch === 'premium' && level === 30) return 'legend-swan';
+    if (branch === 'premium') return ['nft-swan-item','nft-ring-item','nft-rocket-item'][level % 3];
+    return ['daily-teddy','daily-rocket','daily-perfume','daily-ring'][level % 4];
+  }
+  function customEventReward(eventType, branch, level) {
+    return (S.eventData?.rewards || []).find(r => r.event_type === eventType && r.branch === branch && Number(r.level) === Number(level));
+  }
   function renderEvent() {
     const data=S.eventData||{}; const settings=data.settings||data.event||mockEvent;
     const beforeEnd = !settings.ends_at || new Date(settings.ends_at).getTime() > Date.now();
@@ -450,10 +506,14 @@
     const levels=$('#pass-levels'); levels.innerHTML=Array.from({length:30},(_,i)=>{
       const level=i+1; const unlocked=Number(progress.xp||0)>=level*100;
       const freeDone=freeClaimed.includes(level); const premiumDone=premiumClaimed.includes(level);
-      const freeImage=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i%5];
-      const premiumImage=level===30?'nft-swan.png':['nft-swan.png','ring.png','rocket.png','perfume.png'][i%4];
+      const freeConfigured=customEventReward('battle_pass','free',level);
+      const premiumConfigured=customEventReward('battle_pass','premium',level);
+      const freeFallback=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i%5];
+      const premiumFallback=level===30?'nft-swan.png':['nft-swan.png','ring.png','rocket.png','perfume.png'][i%4];
+      const freeImage=freeConfigured?.image_url?imageSrc(freeConfigured.image_url):asset(freeFallback);
+      const premiumImage=premiumConfigured?.image_url?imageSrc(premiumConfigured.image_url):asset(premiumFallback);
       const premiumReady=Number(progress.premium_unlocked||0)===1;
-      return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small><img loading="lazy" src="${asset(freeImage)}" alt="Бесплатная награда ${level}"/><button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small><img loading="lazy" src="${asset(premiumImage)}" alt="Premium награда ${level}"/><button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
+      return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small><img loading="lazy" src="${freeImage}" alt="${esc(freeConfigured?.title || `Бесплатная награда ${level}`)}"/><button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small><img loading="lazy" src="${premiumImage}" alt="${esc(premiumConfigured?.title || `Premium награда ${level}`)}"/><button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
     }).join('');
     const quests=data.quests||[];$('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
     const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong><img src="${imageSrc(d.image_url)}" alt="Подарок дня ${d.day}" /></button>`).join('');
@@ -501,7 +561,7 @@
     if(MOCK) { renderAll(); return; }
     try {
       const [me, cases, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/cases'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
-      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;renderAll();fillAdminRewardSelector();
+      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;await loadGlobalDisplay();renderAll();fillAdminRewardSelector();
     } catch(err) { console.warn(err); }
   }
 
@@ -570,13 +630,15 @@
       return;
     }
     try {
-      const result=await api('/api/admin/overview'); S.adminOverview=result;
+      const result=await api('/api/admin/overview'); S.adminOverview=result; fillEventRewardCatalog();
       const cases=result.cases||[];
       const selected = preselectId || $('#admin-case-select').value;
       $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}${Number(c.active)?'':' · выкл.'}</option>`).join('');
       if (selected && cases.some(c=>c.id===selected)) $('#admin-case-select').value=selected;
       fillAdminCase();
-      $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=result.event.ends_at?new Date(result.event.ends_at).toISOString().slice(0,16):'';
+      $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=toLocalDateTimeInput(result.event.ends_at);
+      try { const gd=await api('/api/global-display'); S.globalDisplay=gd.settings; const v=gd.settings||{};$('#admin-message-enabled').checked=Boolean(Number(v.message_enabled));$('#admin-message-title').value=v.message_title||'Новости NftGiftCase';$('#admin-message-body').value=v.message_body||'';$('#admin-timer-enabled').checked=Boolean(Number(v.timer_enabled));$('#admin-timer-title').value=v.timer_title||'До завершения события';$('#admin-timer-end').value=toLocalDateTimeInput(v.timer_ends_at);renderGlobalDisplay(); } catch(err) { console.warn('Cannot load global display settings:',err.message); }
+      syncEventRewardBranch();
       $('#admin-orders').innerHTML=(result.orders||[]).map(o=>`<div class="admin-order"><span>${esc(o.order_type)} · ${esc(o.status)}<br/><small>${esc(o.telegram_id)}</small></span><strong>${esc(o.amount_xtr)} XTR</strong></div>`).join('')||'Заказов нет';
     } catch(err){toast(err.message,'error');}
   }
@@ -703,9 +765,75 @@
     try {await api('/api/admin/promocodes',{method:'POST',body:payload});toast('Промокод создан','success');$('#admin-promo-code').value='';await loadAdmin();}catch(err){toast(err.message,'error');}
   }
   async function adminSaveEvent() {
-    const payload={enabled:$('#admin-event-enabled').checked,eventType:$('#admin-event-type').value,title:$('#admin-event-title').value,endsAt:$('#admin-event-end').value?new Date($('#admin-event-end').value).toISOString():null,premiumPriceXtr:Number($('#admin-event-price').value)};
+    const rawEnd = $('#admin-event-end').value;
+    const endDate = rawEnd ? new Date(rawEnd) : null;
+    if (rawEnd && (!endDate || !Number.isFinite(endDate.getTime()))) return toast('Проверь дату окончания события', 'error');
+    const payload={enabled:$('#admin-event-enabled').checked,eventType:$('#admin-event-type').value,title:$('#admin-event-title').value.trim(),endsAt:endDate?endDate.toISOString():null,premiumPriceXtr:Number($('#admin-event-price').value)};
+    if(!payload.title)return toast('Укажи название события','error');
+    if(!Number.isSafeInteger(payload.premiumPriceXtr)||payload.premiumPriceXtr<1||payload.premiumPriceXtr>100000)return toast('Цена Premium Pass должна быть от 1 до 100 000 Stars','error');
     if(MOCK){S.eventData.settings={...S.eventData.settings,...payload};toast('DEMO: Event Manager обновлён только в окне браузера','info');renderEvent();return;}
-    try {await api('/api/admin/event',{method:'PATCH',body:payload});toast('Событие сохранено','success');await refreshUserData();}catch(err){toast(err.message,'error');}
+    const button=$('#admin-event-save');button.disabled=true;
+    try {const result=await api('/api/admin/event',{method:'PATCH',body:payload});if(result.event)S.eventData.settings=result.event;toast('Событие сохранено','success');await refreshUserData();await loadAdmin();}
+    catch(err){toast(err.message,'error',5500);}
+    finally{button.disabled=false;}
+  }
+
+  async function adminSaveGlobalDisplay() {
+    if (!S.isAdmin) return toast('Доступ запрещён','error');
+    const rawEnd=$('#admin-timer-end').value;
+    const endDate=rawEnd?new Date(rawEnd):null;
+    if(rawEnd&&(!endDate||!Number.isFinite(endDate.getTime())))return toast('Проверь дату таймера','error');
+    const payload={messageEnabled:$('#admin-message-enabled').checked,messageTitle:$('#admin-message-title').value.trim()||'Новости NftGiftCase',messageBody:$('#admin-message-body').value.trim(),timerEnabled:$('#admin-timer-enabled').checked,timerTitle:$('#admin-timer-title').value.trim()||'До завершения события',timerEndsAt:endDate?endDate.toISOString():null};
+    if(payload.messageEnabled&&!payload.messageBody)return toast('Включённое сообщение не должно быть пустым','error');
+    if(payload.timerEnabled&&!payload.timerEndsAt)return toast('Укажи дату окончания таймера','error');
+    if(MOCK){S.globalDisplay={message_enabled:+payload.messageEnabled,message_title:payload.messageTitle,message_body:payload.messageBody,timer_enabled:+payload.timerEnabled,timer_title:payload.timerTitle,timer_ends_at:payload.timerEndsAt};renderGlobalDisplay();return toast('DEMO: настройки сохранены только до закрытия окна','info');}
+    const button=$('#admin-global-save');button.disabled=true;
+    try{const result=await api('/api/admin/global-display',{method:'PATCH',body:payload});S.globalDisplay=result.settings;renderGlobalDisplay();toast('Глобальное сообщение и таймер опубликованы','success');}
+    catch(err){toast(err.message,'error',5500);}
+    finally{button.disabled=false;}
+  }
+
+  function fillEventRewardCatalog() {
+    const select=$('#admin-event-reward-item');if(!select)return;
+    const items=S.adminOverview?.rewardCatalog||[];
+    const old=select.value;
+    select.innerHTML=items.map(item=>`<option value="${esc(item.id)}">${esc(item.title)} · ${esc(money(item.value_stars))}</option>`).join('')||'<option value="">Каталог подарков пуст</option>';
+    if(old&&items.some(item=>String(item.id)===old))select.value=old;
+    syncEventRewardEditor();
+  }
+  function syncEventRewardBranch() {
+    const type=$('#admin-reward-event-type')?.value||'battle_pass';
+    const branch=$('#admin-reward-branch');const level=$('#admin-reward-level');const label=$('#admin-reward-level-label');
+    if(type==='advent'){
+      branch.innerHTML='<option value="advent">Награда календаря</option>';branch.value='advent';level.max='24';level.value=String(Math.min(24,Math.max(1,Number(level.value)||1)));label.firstChild.textContent='День календаря (1–24)';
+    }else{
+      const old=branch.value==='advent'?'free':branch.value;branch.innerHTML='<option value="free">FREE — бесплатная</option><option value="premium">PREMIUM</option>';branch.value=['free','premium'].includes(old)?old:'free';level.max='30';level.value=String(Math.min(30,Math.max(1,Number(level.value)||1)));label.firstChild.textContent='Уровень (1–30)';
+    }
+    syncEventRewardEditor();
+  }
+  function syncEventRewardEditor() {
+    const eventType=$('#admin-reward-event-type')?.value||'battle_pass';
+    const branch=$('#admin-reward-branch')?.value||(eventType==='advent'?'advent':'free');
+    const level=Math.max(1,Math.trunc(Number($('#admin-reward-level')?.value)||1));
+    const saved=customEventReward(eventType,branch,level);
+    const itemId=saved?.item_id||defaultEventRewardId(eventType,branch,level);
+    const select=$('#admin-event-reward-item');
+    if(select&&[...select.options].some(o=>o.value===itemId))select.value=itemId;
+    const option=select?.selectedOptions?.[0];
+    const preview=$('#admin-reward-preview');
+    if(preview)preview.textContent=option?`${saved?'Сохранённая награда':'Награда по умолчанию'}: ${option.textContent}`:'Выбери подарок из каталога.';
+  }
+  async function adminSaveEventReward() {
+    if(!S.isAdmin)return toast('Доступ запрещён','error');
+    const eventType=$('#admin-reward-event-type').value;const branch=$('#admin-reward-branch').value;const level=Number($('#admin-reward-level').value);const itemId=$('#admin-event-reward-item').value;
+    const max=eventType==='advent'?24:30;
+    if(!Number.isSafeInteger(level)||level<1||level>max)return toast(`Укажи число от 1 до ${max}`,'error');
+    if(!itemId)return toast('Выбери подарок','error');
+    if(MOCK)return toast('DEMO: награда не сохранена на сервере','error');
+    const button=$('#admin-save-event-reward');button.disabled=true;
+    try{const result=await api('/api/admin/event/rewards',{method:'POST',body:{eventType,branch,level,itemId}});toast(`Награда ${eventType==='advent'?'дня':'уровня'} ${level} сохранена: ${result.item.title}`,'success');await refreshUserData();await loadAdmin();syncEventRewardEditor();}
+    catch(err){toast(err.message,'error',5500);}
+    finally{button.disabled=false;}
   }
 
   function handleClick(event) {
@@ -745,7 +873,7 @@
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
     if(target.id==='admin-credit-btn') {adminBalance('add');return;} if(target.id==='admin-debit-btn') {adminBalance('subtract');return;}
     if(target.id==='admin-gift-btn') {adminReward(false);return;} if(target.id==='admin-combo-btn') {adminReward(true);return;}
-    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;}
+    if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;} if(target.id==='admin-global-save') {adminSaveGlobalDisplay();return;} if(target.id==='admin-save-event-reward') {adminSaveEventReward();return;}
     if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#pass-levels').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
     if(target.matches('[data-claim-level]')) {claimLevel(Number(target.dataset.claimLevel),target.dataset.branch||'free');return;}
     if(target.matches('[data-claim-quest]')) {claimQuest(target.dataset.claimQuest);return;}
@@ -769,6 +897,8 @@
     if(event.target.id==='bet-range'){S.upgradeBet=Number(event.target.value);updateUpgradeChance();}
     if(event.target.id==='admin-case-select')fillAdminCase();
     if(event.target.id==='admin-event-type'&&MOCK){const title=event.target.value==='advent'?'Адвент-календарь':'Halloween Pass';$('#admin-event-title').value=title;}
+    if(event.target.id==='admin-reward-event-type'){syncEventRewardBranch();}
+    if(event.target.id==='admin-reward-branch'||event.target.id==='admin-reward-level'){syncEventRewardEditor();}
   }
 
   // SVG wheel ticks are decorative and are rendered once; all drop images are PNGs from the project asset CDN.
@@ -780,7 +910,8 @@
   document.addEventListener('keydown',event=>{if(event.key==='Escape')closeModal();});
   if(tg?.BackButton) { tg.BackButton.onClick(()=>setView('home')); }
   window.addEventListener('focus',()=>{if(!MOCK)refreshUserData();});
-  window.setInterval(()=>{if(!MOCK&&document.visibilityState==='visible')api('/api/live-wins').then(r=>{S.wins=r.wins;renderLive();}).catch(()=>{});},8000);
+  window.setInterval(()=>{updateGlobalCountdown();},1000);
+  window.setInterval(()=>{if(!MOCK&&document.visibilityState==='visible'){api('/api/live-wins').then(r=>{S.wins=r.wins;renderLive();}).catch(()=>{});api('/api/global-display').then(r=>{S.globalDisplay=r.settings;renderGlobalDisplay();}).catch(()=>{});}},30000);
   window.addEventListener('error',event=>console.error('NftGiftCase UI error',event.message));
   syncSoundButton(); loadAll();
 })();

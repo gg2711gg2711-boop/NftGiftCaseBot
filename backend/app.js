@@ -37,75 +37,34 @@ function secureInt(maxExclusive) {
   return n % maxExclusive;
 }
 
-
 function validateTelegramInitData(raw, botToken) {
-  if (!raw || !botToken) {
-    throw new Error('Telegram initData or BOT_TOKEN is missing');
-  }
-
+  if (!raw || !botToken) throw new Error('Telegram initData or BOT_TOKEN is missing');
   const params = new URLSearchParams(raw);
   const receivedHash = params.get('hash');
   const authDate = Number(params.get('auth_date'));
-
-  if (!receivedHash || !Number.isFinite(authDate)) {
-    throw new Error('Malformed Telegram initData');
-  }
-
+  if (!receivedHash || !Number.isFinite(authDate)) throw new Error('Malformed Telegram initData');
   const current = Math.floor(Date.now() / 1000);
-
-  if (
-    authDate > current + 30 ||
-    current - authDate > MAX_INIT_AGE_SECONDS
-  ) {
-    throw new Error('Telegram initData has expired');
-  }
-
+  if (authDate > current + 30 || current - authDate > MAX_INIT_AGE_SECONDS) throw new Error('Telegram initData has expired');
   const dataCheckString = [...params.entries()]
     .filter(([key]) => key !== 'hash')
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
-
-  // Сначала создаём секретный ключ Telegram.
-  const secretKey = createHmac('sha256', 'WebAppData')
-    .update(botToken)
-    .digest();
-
-  // Затем проверяем подпись initData.
-  const calculated = createHmac('sha256', secretKey)
-    .update(dataCheckString)
-    .digest('hex');
-
+  // Telegram Mini Apps validation: secret key = HMAC-SHA256(key='WebAppData', message=botToken).
+  // Keep 'WebAppData' as the HMAC key and the bot token as the message.
+  const secretKey = createHmac('sha256', 'WebAppData').update(botToken).digest();
+  const calculated = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
   const a = Buffer.from(calculated, 'hex');
   const b = Buffer.from(receivedHash, 'hex');
-
-  if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    throw new Error('Telegram initData signature is invalid');
-  }
-
+  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error('Telegram initData signature is invalid');
   const userText = params.get('user');
-
-  if (!userText) {
-    throw new Error('Telegram user is missing from initData');
-  }
-
+  if (!userText) throw new Error('Telegram user is missing from initData');
   let user;
-
-  try {
-    user = JSON.parse(userText);
-  } catch {
-    throw new Error('Telegram user payload is invalid');
-  }
-
-  if (!user?.id) {
-    throw new Error('Telegram user id is missing');
-  }
-
-  return {
-    user,
-    startParam: params.get('start_param') || ''
-  };
+  try { user = JSON.parse(userText); } catch { throw new Error('Telegram user payload is invalid'); }
+  if (!user?.id) throw new Error('Telegram user id is missing');
+  return { user, startParam: params.get('start_param') || '' };
 }
+
 async function telegramCall(env, method, body) {
   if (!env.BOT_TOKEN) throw new Error('BOT_TOKEN is not configured');
   const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
@@ -196,7 +155,7 @@ async function awardDrop(db, telegramId, item, source = 'case') {
   await dbRun(db, 'INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,?,\'owned\')', inventoryId, telegramId, item.id, source);
   await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+1 WHERE id=?', item.id);
   await dbRun(db, 'INSERT INTO live_wins(telegram_id,username,item_title,image_url,value_stars) SELECT ?,COALESCE(username,\'Player\'),?,?,? FROM users WHERE telegram_id=?', telegramId, item.title, item.image_url, item.value_stars, telegramId);
-  if (source !== 'upgrade' && source !== 'battle_pass' && source !== 'advent') {
+  if (source !== 'upgrade' && source !== 'battle_pass' && source !== 'advent' && source !== 'admin') {
     await dbRun(db, 'UPDATE cases SET opened_count=opened_count+1 WHERE id=(SELECT case_id FROM case_items WHERE id=?)', item.id);
     await dbRun(db, `UPDATE user_quests SET progress=progress+1,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND quest_id IN ('open_1','open_5')`, telegramId);
   }
@@ -334,6 +293,33 @@ export function createApp(envProvider = () => ({})) {
         } else if (command === '/paysupport') {
           const support = String(env.SUPPORT_USERNAME || 'sork1555').replace(/^@/, '');
           await telegramCall(env, 'sendMessage', { chat_id: message.chat.id, text: `Поддержка по платежам Telegram Stars: @${support}. Укажите примерное время платежа и приложите Telegram payment charge ID, если он доступен.` });
+        } else if (command === '/admin') {
+          const senderId = String(message.from?.id || '');
+          const adminId = String(env.ADMIN_ID || ADMIN_ID_FALLBACK);
+          if (senderId !== adminId) {
+            await telegramCall(env, 'sendMessage', {
+              chat_id: message.chat.id,
+              text: 'Команда /admin доступна только администратору.'
+            });
+          } else if (!env.PUBLIC_APP_URL) {
+            await telegramCall(env, 'sendMessage', {
+              chat_id: message.chat.id,
+              text: 'Не настроен адрес приложения PUBLIC_APP_URL.'
+            });
+          } else {
+            const adminUrl = new URL(env.PUBLIC_APP_URL);
+            adminUrl.searchParams.set('admin', '1');
+            await telegramCall(env, 'sendMessage', {
+              chat_id: message.chat.id,
+              text: 'Панель администратора NftGiftCase:',
+              reply_markup: {
+                inline_keyboard: [[{
+                  text: 'Открыть админку',
+                  web_app: { url: adminUrl.toString() }
+                }]]
+              }
+            });
+          }
         }
       }
       if (message?.successful_payment) {
@@ -377,6 +363,18 @@ export function createApp(envProvider = () => ({})) {
     return json(res, 200, { ok: true, cases: detailed });
   });
 
+  app.post('/api/inventory/:inventoryId/sell', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id); const inventoryId = String(req.params.inventoryId || '');
+    const item = await dbFirst(db, `SELECT inv.id,inv.status,ci.title,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=? AND inv.telegram_id=?`, inventoryId, userId);
+    if (!item || item.status !== 'owned') return fail(res, 409, 'Предмет не найден, уже продан или отправлен на вывод');
+    const saleValue = Math.max(1, Math.floor(Number(item.value_stars || 0) * 0.7));
+    const update = await dbRun(db, `UPDATE inventory SET status='sold' WHERE id=? AND telegram_id=? AND status='owned'`, inventoryId, userId);
+    if ((update.meta?.changes || 0) === 0) return fail(res, 409, 'Предмет уже обрабатывается или продан');
+    await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', saleValue, userId);
+    const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId);
+    return json(res, 200, { ok:true, saleValue, balance:Number(user?.balance || 0), message:`Предмет продан за ${saleValue} кредитов` });
+  });
+
   app.get('/api/live-wins', async (req, res) => {
     const wins = await dbAll(dbOf(req), `SELECT id,username,item_title,image_url,value_stars,created_at FROM live_wins ORDER BY id DESC LIMIT 18`);
     return json(res, 200, { ok: true, wins });
@@ -384,7 +382,7 @@ export function createApp(envProvider = () => ({})) {
 
   app.get('/api/inventory', async (req, res) => {
     const db = dbOf(req);
-    const items = await dbAll(db, `SELECT inv.id AS inventory_id,inv.status,inv.source,inv.created_at,ci.id AS item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? ORDER BY inv.created_at DESC LIMIT 100`, req.user.telegram_id);
+    const items = await dbAll(db, `SELECT inv.id AS inventory_id,inv.status,inv.source,inv.created_at,ci.id AS item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.status IN ('owned','withdraw_pending') ORDER BY inv.created_at DESC LIMIT 100`, req.user.telegram_id);
     return json(res, 200, { ok: true, items });
   });
 
@@ -414,6 +412,39 @@ export function createApp(envProvider = () => ({})) {
   };
   app.post('/api/free/claim', claimFreeGift);
   app.post('/api/free/daily', claimFreeGift);
+
+  app.post('/api/cases/open-with-balance', async (req, res) => {
+    const db = dbOf(req); const telegramId = String(req.user.telegram_id);
+    const caseId = String(req.body?.caseId || '');
+    const quantity = Math.trunc(Number(req.body?.quantity) || 1);
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 5) return fail(res, 400, 'Количество открытий должно быть от 1 до 5');
+    const c = await dbFirst(db, 'SELECT * FROM cases WHERE id=? AND active=1 AND is_free=0', caseId);
+    if (!c) return fail(res, 404, 'Платный кейс не найден или выключен');
+    if (c.max_opens !== null && c.max_opens !== undefined && Number(c.opened_count) + Number(c.reserved_opens || 0) + quantity > Number(c.max_opens)) return fail(res, 409, 'Осталось меньше открытий, чем выбрано');
+    const total = Number(c.price_xtr) * quantity;
+    if (!Number.isSafeInteger(total) || total < 1 || total > 5000000) return fail(res, 400, 'Некорректная стоимость кейса');
+    const rows = await dbAll(db, 'SELECT * FROM case_items WHERE case_id=? ORDER BY id', caseId);
+    const drops = [];
+    for (let i=0; i<quantity; i++) {
+      const eligible = rows.filter(item => item.stock_limit === null || item.stock_limit === undefined || Number(item.awarded_count) < Number(item.stock_limit));
+      if (!eligible.length) return fail(res, 409, 'В этом кейсе закончились предметы');
+      const totalWeight = eligible.reduce((sum,item)=>sum+Number(item.weight||0),0);
+      if (!Number.isSafeInteger(totalWeight) || totalWeight <= 0) return fail(res, 500, 'У кейса некорректно настроены шансы');
+      let roll = secureInt(totalWeight); let chosen = eligible[eligible.length-1];
+      for (const item of eligible) { roll -= Number(item.weight); if (roll < 0) { chosen=item; break; } }
+      drops.push({ ...chosen });
+      const chosenRow = rows.find(item=>item.id===chosen.id); if (chosenRow) chosenRow.awarded_count = Number(chosenRow.awarded_count||0) + 1;
+    }
+    const debit = await dbRun(db, 'UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?', total, telegramId, total);
+    if ((debit.meta?.changes || 0) === 0) return fail(res, 409, 'Недостаточно кредитов для открытия кейса');
+    const awarded = [];
+    for (const drop of drops) {
+      const inventoryId = await awardDrop(db, telegramId, drop, 'case');
+      awarded.push({ id:drop.id, title:drop.title, image_url:drop.image_url, kind:drop.kind, value_stars:drop.value_stars, inventoryId });
+    }
+    const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', telegramId);
+    return json(res, 200, { ok:true, caseId, quantity, items:awarded, balance:Number(user?.balance || 0), spent:total });
+  });
 
   app.post('/api/payments/invoice', async (req, res) => {
     const db = dbOf(req); const { type } = req.body || {};
@@ -494,13 +525,23 @@ export function createApp(envProvider = () => ({})) {
 
   app.get('/api/event', async (req, res) => {
     const db = dbOf(req); const userId = String(req.user.telegram_id);
-    const settings = await dbFirst(db, 'SELECT enabled,event_type,title,ends_at,premium_price_xtr FROM event_settings WHERE id=1');
+    const settings = await dbFirst(db, 'SELECT enabled,event_type,title,ends_at,premium_price_xtr FROM event_settings WHERE id=1')
+      || { enabled:0, event_type:'battle_pass', title:'Halloween Pass', ends_at:null, premium_price_xtr:PREMIUM_PASS_PRICE };
     const progress = await dbFirst(db, 'SELECT xp,premium_unlocked,claimed_free_levels,claimed_premium_levels FROM event_progress WHERE telegram_id=?', userId);
     const quests = await dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,COALESCE(u.progress,0) AS progress,COALESCE(u.claimed,0) AS claimed FROM quests q LEFT JOIN user_quests u ON u.quest_id=q.id AND u.telegram_id=? WHERE q.active=1 ORDER BY q.id`, userId);
+    const rewards = await dbAll(db, `SELECT er.event_type,er.branch,er.level,er.item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id ORDER BY er.event_type,er.branch,er.level`);
+    const rewardMap = new Map(rewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
+    const adventDefaults = ['daily-teddy','daily-rocket','daily-perfume','daily-ring'];
     const today = new Date();
-    const isAdventSeason = today.getUTCMonth() === 11; // December, UTC to keep server-side claim rules deterministic.
-    const calendar = Array.from({length: 24}, (_,i)=>({day:i+1, title:`Подарок ${i+1}`, image_url:['gift-box.png','nft-swan.png','rocket.png','perfume.png'][i%4], unlocked:isAdventSeason && i+1<=today.getUTCDate()}));
-    return json(res, 200, { ok: true, settings, progress: progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, calendar });
+    const isAdventSeason = today.getUTCMonth() === 11;
+    const calendar = await Promise.all(Array.from({length:24}, async (_,i) => {
+      const day = i + 1;
+      const configured = rewardMap.get(`advent:advent:${day}`);
+      const itemId = configured?.item_id || adventDefaults[(day - 1) % adventDefaults.length];
+      const item = configured || await dbFirst(db, 'SELECT id AS item_id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
+      return { day, title:item?.title || `Подарок ${day}`, item_id:item?.item_id || itemId, image_url:item?.image_url || ['gift-box.png','nft-swan.png','rocket.png','perfume.png'][(day-1)%4], kind:item?.kind || 'gift', value_stars:item?.value_stars || 0, unlocked:isAdventSeason && day <= today.getUTCDate() };
+    }));
+    return json(res, 200, { ok:true, settings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, calendar, rewards });
   });
 
   app.post('/api/event/quests/:questId/claim', async (req, res) => {
@@ -527,15 +568,18 @@ export function createApp(envProvider = () => ({})) {
     let claimed = [];
     try { claimed = JSON.parse(progress?.[field] || '[]'); } catch { claimed = []; }
     if (claimed.includes(level)) return fail(res, 409, 'Награда уже получена');
+    const configuredReward = await dbFirst(db, `SELECT ci.* FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id WHERE er.event_type='battle_pass' AND er.branch=? AND er.level=?`, branch, level);
     const chosenId = branch === 'premium' && level === 30 ? 'legend-swan'
       : branch === 'premium' ? ['nft-swan-item','nft-ring-item','nft-rocket-item'][level % 3]
       : ['daily-teddy','daily-rocket','daily-perfume','daily-ring'][level % 4];
-    const item = await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', chosenId);
+    const item = configuredReward || await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', chosenId);
     if (!item) return fail(res, 500, 'Награда уровня не настроена');
+    if (item.stock_limit !== null && item.stock_limit !== undefined && Number(item.awarded_count || 0) >= Number(item.stock_limit)) return fail(res, 409, 'Запас этой награды закончился. Обратись к администратору.');
     claimed.push(level);
     await dbRun(db, `UPDATE event_progress SET ${field}=?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`, JSON.stringify(claimed), telegramId);
     const inventoryId = id();
     await dbRun(db, "INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,?,'owned')", inventoryId, telegramId, item.id, 'battle_pass');
+    await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+1 WHERE id=?', item.id);
     await dbRun(db, "INSERT INTO live_wins(telegram_id,username,item_title,image_url,value_stars) SELECT ?,COALESCE(username,'Player'),?,?,? FROM users WHERE telegram_id=?", telegramId, item.title, item.image_url, item.value_stars, telegramId);
     return json(res, 200, { ok:true, message:`Награда уровня ${level} получена`, item, inventoryId });
   });
@@ -546,10 +590,16 @@ export function createApp(envProvider = () => ({})) {
     if (!event?.enabled || event.event_type !== 'advent' || (event.ends_at && new Date(event.ends_at).getTime() <= Date.now())) return fail(res, 409, 'Адвент-календарь завершён или выключен');
     const today = new Date();
     if (!Number.isSafeInteger(day) || day < 1 || day > 24 || today.getUTCMonth() !== 11 || day > today.getUTCDate()) return fail(res, 409, 'Эта ячейка пока закрыта: ячейки открываются по дням декабря.');
+    const configuredReward = await dbFirst(db, `SELECT ci.* FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id WHERE er.event_type='advent' AND er.branch='advent' AND er.level=?`, day);
+    const defaultIds = ['daily-teddy','daily-rocket','daily-perfume','daily-ring'];
+    const drop = configuredReward || await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', defaultIds[(day - 1) % defaultIds.length]);
+    if (!drop) return fail(res, 500, 'Награда адвент-календаря не настроена');
+    if (drop.stock_limit !== null && drop.stock_limit !== undefined && Number(drop.awarded_count || 0) >= Number(drop.stock_limit)) return fail(res, 409, 'Запас этой награды закончился. Выбери другой подарок в настройках события.');
     const claim = await dbRun(db, 'INSERT OR IGNORE INTO advent_claims(telegram_id,day) VALUES(?,?)', telegramId, day);
     if ((claim.meta?.changes || 0) === 0) return fail(res, 409, 'Вы уже открыли эту ячейку');
-    const { drop } = await getDrop(db, 'daily'); const inventoryId = id();
+    const inventoryId = id();
     await dbRun(db, "INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,'advent','owned')", inventoryId, telegramId, drop.id);
+    await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+1 WHERE id=?', drop.id);
     await dbRun(db, "INSERT INTO live_wins(telegram_id,username,item_title,image_url,value_stars) SELECT ?,COALESCE(username,'Player'),?,?,? FROM users WHERE telegram_id=?", telegramId, drop.title, drop.image_url, drop.value_stars, telegramId);
     await dbRun(db, 'UPDATE event_progress SET xp=xp+10,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', telegramId);
     return json(res, 200, { ok:true, item:drop, inventoryId });
@@ -611,20 +661,21 @@ export function createApp(envProvider = () => ({})) {
   // Admin API: all write operations are protected server-side by Telegram ID.
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
     const db = dbOf(req);
-    const [userCount, orders, withdrawals, cases, promos] = await Promise.all([
+    const [userCount, orders, withdrawals, cases, promos, rewardCatalog] = await Promise.all([
       dbFirst(db, 'SELECT COUNT(*) AS n FROM users'),
       dbAll(db, 'SELECT id,telegram_id,order_type,amount_xtr,status,created_at,paid_at FROM orders ORDER BY created_at DESC LIMIT 30'),
       dbAll(db, `SELECT w.id,w.status,w.created_at,u.telegram_id,u.username,ci.title AS item_title FROM withdrawals w JOIN users u ON u.telegram_id=w.telegram_id JOIN inventory inv ON inv.id=w.inventory_id JOIN case_items ci ON ci.id=inv.item_id ORDER BY w.created_at DESC LIMIT 30`),
       // Hide internal daily reward cases and retired sample crates from the owner's case builder.
       dbAll(db, `SELECT c.* FROM cases c WHERE c.id NOT IN ('daily','nft-mini','crate-blue','crate-orange','legend') ORDER BY c.sort_order,c.created_at`),
-      dbAll(db, 'SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 30')
+      dbAll(db, 'SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 30'),
+      dbAll(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items ORDER BY title,id')
     ]);
     const detailedCases = await Promise.all(cases.map(async c => ({
       ...c,
       items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY created_at,id', c.id)
     })));
-    const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1');
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event });
+    const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween Pass',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog });
   });
 
   app.post('/api/admin/cases', requireAdmin, async (req, res) => {
@@ -681,13 +732,40 @@ export function createApp(envProvider = () => ({})) {
     const db = dbOf(req); const targetId = String(req.body?.telegramId || ''); const amount = Math.trunc(Number(req.body?.amount));
     const mode = req.body?.mode === 'subtract' ? 'subtract' : 'add';
     if (!/^\d{1,20}$/.test(targetId) || !Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) return fail(res, 400, 'Некорректный пользователь или сумма');
+    await dbRun(db, `INSERT OR IGNORE INTO users(telegram_id,first_name) VALUES(?,'Player')`, targetId);
     const target = await dbFirst(db, 'SELECT telegram_id FROM users WHERE telegram_id=?', targetId);
-    if (!target) return fail(res, 404, 'Пользователь не найден — он должен хотя бы раз открыть Mini App');
+    if (!target) return fail(res, 500, 'Не удалось создать запись пользователя');
     if (mode === 'subtract') {
       const upd = await dbRun(db, 'UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?', amount, targetId, amount);
       if ((upd.meta?.changes || 0) === 0) return fail(res, 409, 'Недостаточно средств');
     } else await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', amount, targetId);
     return json(res, 200, { ok:true, balance:(await dbFirst(db,'SELECT balance FROM users WHERE telegram_id=?',targetId)).balance });
+  });
+
+  app.post('/api/admin/rewards', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    const targetId = String(req.body?.telegramId || '').trim();
+    const itemId = String(req.body?.itemId || '').trim();
+    const hasAmount = req.body?.amount !== undefined && req.body?.amount !== null && req.body?.amount !== '';
+    const amount = hasAmount ? adminInteger(req.body.amount, 1, 1000000) : null;
+    if (!/^[1-9]\d{0,19}$/.test(targetId)) return fail(res, 400, 'Некорректный Telegram ID пользователя');
+    if (!itemId && !hasAmount) return fail(res, 400, 'Выбери подарок, сумму или оба варианта');
+    if (hasAmount && amount === null) return fail(res, 400, 'Сумма должна быть целым числом от 1 до 1 000 000');
+    await dbRun(db, `INSERT OR IGNORE INTO users(telegram_id,first_name) VALUES(?,'Player')`, targetId);
+    const target = await dbFirst(db, 'SELECT telegram_id FROM users WHERE telegram_id=?', targetId);
+    if (!target) return fail(res, 500, 'Не удалось создать запись пользователя');
+    let item = null; let inventoryId = null;
+    if (itemId) {
+      item = await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
+      if (!item) return fail(res, 404, 'Подарок не найден в каталоге');
+      inventoryId = id();
+    }
+    if (amount !== null) await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', amount, targetId);
+    if (item && inventoryId) {
+      await dbRun(db, `INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,'admin','owned')`, inventoryId, targetId, item.id);
+    }
+    const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', targetId);
+    return json(res, 200, { ok:true, telegramId:targetId, balance:Number(user?.balance || 0), item:item ? { ...item, inventoryId } : null, amount:amount || 0 });
   });
 
   app.patch('/api/admin/cases/:caseId', requireAdmin, async (req, res) => {
@@ -780,14 +858,71 @@ export function createApp(envProvider = () => ({})) {
   });
 
   app.patch('/api/admin/event', requireAdmin, async (req, res) => {
-    const enabled = req.body?.enabled ? 1 : 0;
+    const db = dbOf(req);
+    try {
+      const enabled = req.body?.enabled ? 1 : 0;
+      const eventType = req.body?.eventType === 'advent' ? 'advent' : 'battle_pass';
+      const title = String(req.body?.title || (eventType === 'advent' ? 'Адвент-календарь' : 'Halloween Pass')).trim().slice(0, 80);
+      const rawEnd = req.body?.endsAt;
+      const endDate = rawEnd ? new Date(rawEnd) : null;
+      if (rawEnd && (!endDate || !Number.isFinite(endDate.getTime()))) return fail(res, 400, 'Проверь дату окончания события');
+      const endsAt = endDate ? endDate.toISOString() : null;
+      const premiumPrice = Math.trunc(Number(req.body?.premiumPriceXtr ?? PREMIUM_PASS_PRICE));
+      if (!title) return fail(res, 400, 'Укажи название события');
+      if (!Number.isSafeInteger(premiumPrice) || premiumPrice < 1 || premiumPrice > 100000) return fail(res, 400, 'Цена Premium Pass должна быть от 1 до 100 000 Stars');
+      await dbRun(db, `INSERT INTO event_settings(id,enabled,event_type,title,ends_at,premium_price_xtr,updated_at) VALUES(1,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,event_type=excluded.event_type,title=excluded.title,ends_at=excluded.ends_at,premium_price_xtr=excluded.premium_price_xtr,updated_at=CURRENT_TIMESTAMP`, enabled,eventType,title,endsAt,premiumPrice);
+      const saved = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1');
+      return json(res, 200, { ok:true, event:saved });
+    } catch (err) {
+      console.error('Admin event save failed:', err?.stack || err);
+      return fail(res, 500, 'Не удалось сохранить событие. Проверь, что таблица event_settings создана в D1.');
+    }
+  });
+
+  app.get('/api/global-display', async (req, res) => {
+    const settings = await dbFirst(dbOf(req), 'SELECT * FROM global_display_settings WHERE id=1');
+    return json(res, 200, { ok:true, settings:settings || { id:1,message_enabled:0,message_title:'Новости NftGiftCase',message_body:'',timer_enabled:0,timer_title:'До завершения события',timer_ends_at:null } });
+  });
+
+  app.patch('/api/admin/global-display', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    try {
+      const messageEnabled = req.body?.messageEnabled ? 1 : 0;
+      const messageTitle = String(req.body?.messageTitle || 'Новости NftGiftCase').trim().slice(0, 70);
+      const messageBody = String(req.body?.messageBody || '').trim().slice(0, 260);
+      const timerEnabled = req.body?.timerEnabled ? 1 : 0;
+      const timerTitle = String(req.body?.timerTitle || 'До завершения события').trim().slice(0, 80);
+      const rawTimerEnd = req.body?.timerEndsAt;
+      const timerDate = rawTimerEnd ? new Date(rawTimerEnd) : null;
+      if (rawTimerEnd && (!timerDate || !Number.isFinite(timerDate.getTime()))) return fail(res, 400, 'Проверь дату глобального таймера');
+      if (timerEnabled && !timerDate) return fail(res, 400, 'Укажи дату окончания для включённого таймера');
+      await dbRun(db, `INSERT INTO global_display_settings(id,message_enabled,message_title,message_body,timer_enabled,timer_title,timer_ends_at,updated_at)
+        VALUES(1,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET message_enabled=excluded.message_enabled,message_title=excluded.message_title,message_body=excluded.message_body,timer_enabled=excluded.timer_enabled,timer_title=excluded.timer_title,timer_ends_at=excluded.timer_ends_at,updated_at=CURRENT_TIMESTAMP`,
+        messageEnabled,messageTitle,messageBody,timerEnabled,timerTitle,timerDate ? timerDate.toISOString() : null);
+      const settings = await dbFirst(db, 'SELECT * FROM global_display_settings WHERE id=1');
+      return json(res, 200, { ok:true, settings });
+    } catch (err) {
+      console.error('Global display save failed:', err?.stack || err);
+      return fail(res, 500, 'Не удалось сохранить глобальное сообщение или таймер. Проверь миграцию базы данных.');
+    }
+  });
+
+  app.post('/api/admin/event/rewards', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
     const eventType = req.body?.eventType === 'advent' ? 'advent' : 'battle_pass';
-    const title = String(req.body?.title || (eventType === 'advent' ? 'Адвент-календарь' : 'Halloween Pass')).slice(0, 80);
-    const endsAt = req.body?.endsAt ? new Date(req.body.endsAt).toISOString() : null;
-    const premiumPrice = Math.trunc(Number(req.body?.premiumPriceXtr ?? PREMIUM_PASS_PRICE));
-    if (!Number.isSafeInteger(premiumPrice) || premiumPrice < 1 || premiumPrice > 100000) return fail(res, 400, 'Некорректная цена Premium Pass');
-    await dbRun(db, 'UPDATE event_settings SET enabled=?,event_type=?,title=?,ends_at=?,premium_price_xtr=?,updated_at=CURRENT_TIMESTAMP WHERE id=1', enabled,eventType,title,endsAt,premiumPrice);
-    return json(res, 200, { ok:true, event:await dbFirst(db,'SELECT * FROM event_settings WHERE id=1') });
+    const branch = String(req.body?.branch || 'free');
+    const level = adminInteger(req.body?.level, 1, eventType === 'advent' ? 24 : 30);
+    const itemId = String(req.body?.itemId || '').trim();
+    const validBranch = eventType === 'advent' ? branch === 'advent' : ['free','premium'].includes(branch);
+    if (!validBranch) return fail(res, 400, 'Неверная ветка наград для выбранного события');
+    if (level === null) return fail(res, 400, eventType === 'advent' ? 'День должен быть от 1 до 24' : 'Уровень должен быть от 1 до 30');
+    const item = await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
+    if (!item) return fail(res, 404, 'Выбранный подарок не найден в каталоге');
+    await dbRun(db, `INSERT INTO event_rewards(event_type,branch,level,item_id,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(event_type,branch,level) DO UPDATE SET item_id=excluded.item_id,updated_at=CURRENT_TIMESTAMP`, eventType,branch,level,itemId);
+    return json(res, 200, { ok:true, eventType, branch, level, item });
   });
 
   app.use((err, req, res, next) => {

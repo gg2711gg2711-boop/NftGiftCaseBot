@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261022-fix1" />
+  <link rel="stylesheet" href="./styles.css?v=20261022-events2" />
 </head>
 <body>
   <div class="app-shell">
@@ -39,6 +39,18 @@
         <button id="profile-btn" class="avatar-btn" aria-label="Профиль">A<span class="online-dot"></span></button>
       </div>
     </div>
+
+    <section id="global-display" class="global-display hidden" aria-label="Глобальное сообщение и таймер">
+      <article id="global-message-card" class="global-message-card hidden">
+        <div class="global-display-icon message-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9l-5 3v-14Z"/><path d="M8 9h8m-8 3h5"/></svg></div>
+        <div class="global-message-copy"><div class="global-kicker">СООБЩЕНИЕ АДМИНИСТРАЦИИ</div><h2 id="global-message-title">Новости NftGiftCase</h2><p id="global-message-text"></p></div>
+      </article>
+      <article id="global-timer-card" class="global-timer-card hidden">
+        <div class="global-display-icon timer-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8.5"/><path d="M12 8v5l3 2M9 2h6M12 2v2"/></svg></div>
+        <div class="global-timer-copy"><div class="global-kicker">ОБРАТНЫЙ ОТСЧЁТ</div><h2 id="global-timer-title">До завершения события</h2></div>
+        <strong id="global-countdown" class="global-countdown">--:--:--</strong>
+      </article>
+    </section>
 
     <section class="live-strip" aria-label="Последние выигрыши">
       <span class="live-dot"></span><span class="live-label">LIVE</span>
@@ -112,8 +124,8 @@
                 <circle cx="180" cy="180" r="142" fill="none" stroke="#8a80ff" stroke-width="23" stroke-dasharray="18 875" transform="rotate(-90 180 180)" id="chance-sector" stroke-linecap="round" />
                 <circle cx="180" cy="180" r="122" fill="url(#wheelFill)" stroke="#0e1220" stroke-width="7" />
                 <g id="wheel-ticks" stroke="#a8afc8" stroke-width="2" opacity=".55"></g>
-                <g id="wheel-center-art"><image id="wheel-item-image" href="./assets/ring.png" x="95" y="95" width="170" height="170" preserveAspectRatio="xMidYMid meet" /></g>
               </svg>
+              <div id="wheel-center-art" class="wheel-center-art"><img id="wheel-item-image" src="./assets/ring.png" alt="Выбранный подарок" /></div>
               <div class="wheel-pointer"></div>
               <div class="wheel-chance" id="wheel-chance">12.5%</div>
             </div>
@@ -201,6 +213,9 @@
         </div>
         <div class="panel admin-panel"><h2>Промокоды</h2><label>Код<input id="admin-promo-code" placeholder="HALLOWEEN" maxlength="32" /></label><div class="form-grid"><label>Награда<select id="admin-promo-kind"><option value="balance">Кредиты баланса</option><option value="spins">Бесплатные прокруты</option></select></label><label>Количество<input id="admin-promo-amount" type="number" min="1" value="50" /></label></div><div class="form-grid"><label>Лимит применений<input id="admin-promo-max" type="number" min="1" placeholder="Без лимита" /></label><label>Дата окончания<input id="admin-promo-expiry" type="datetime-local" /></label></div><button id="admin-promo-create" class="small-primary">Создать промокод</button></div>
         <div class="panel admin-panel"><h2>Event Manager</h2><label class="toggle-row"><span>Включить событие</span><input type="checkbox" id="admin-event-enabled" /></label><label>Тип события<select id="admin-event-type"><option value="battle_pass">Battle Pass — Halloween Pass</option><option value="advent">Адвент-календарь</option></select></label><label>Название<input id="admin-event-title" value="Halloween Pass" /></label><label>Окончание события<input id="admin-event-end" type="datetime-local" /></label><label>Premium Pass, XTR<input id="admin-event-price" type="number" min="1" value="666" /></label><button id="admin-event-save" class="small-primary">Сохранить событие</button></div>
+        <div class="panel admin-panel global-admin-panel"><h2>📣 Глобальное сообщение</h2><p class="muted-note">Объявление появится сверху приложения у всех игроков. Можно выключить, не удаляя текст.</p><label class="toggle-row"><span>Показывать сообщение</span><input type="checkbox" id="admin-message-enabled" /></label><label>Заголовок<input id="admin-message-title" maxlength="70" value="Новости NftGiftCase" /></label><label>Текст сообщения<textarea id="admin-message-body" maxlength="260" rows="3" placeholder="Например: Halloween Pass уже открыт — забирайте награды!"></textarea></label>
+          <div class="global-admin-divider"></div><h2>⏳ Глобальный таймер</h2><p class="muted-note">Отображается сверху у всех игроков и автоматически считает время до выбранной даты.</p><label class="toggle-row"><span>Показывать таймер</span><input type="checkbox" id="admin-timer-enabled" /></label><label>Подпись таймера<input id="admin-timer-title" maxlength="80" value="До завершения события" /></label><label>Дата и время окончания<input id="admin-timer-end" type="datetime-local" /></label><button id="admin-global-save" class="small-primary">Опубликовать сообщение и таймер</button></div>
+        <div class="panel admin-panel event-reward-panel"><h2>🎁 Редактор наград событий</h2><p class="muted-note">Выбирай событие, ветку, уровень или день и подарок. Новая награда появится у игроков и будет выдаваться сервером.</p><label>Событие<select id="admin-reward-event-type"><option value="battle_pass">Halloween Pass / Battle Pass</option><option value="advent">Адвент-календарь</option></select></label><label>Ветка наград<select id="admin-reward-branch"><option value="free">FREE — бесплатная</option><option value="premium">PREMIUM</option></select></label><label id="admin-reward-level-label">Уровень (1–30)<input id="admin-reward-level" type="number" min="1" max="30" value="1" /></label><label>Подарок для награды<select id="admin-event-reward-item"><option value="">Загрузка каталога…</option></select></label><div id="admin-reward-preview" class="reward-editor-preview muted-note">Выбери уровень и подарок.</div><button id="admin-save-event-reward" class="small-primary">Сохранить награду</button></div>
         <div class="panel admin-panel"><h2>Последние заказы</h2><div id="admin-orders" class="admin-list muted-note">Данные загрузятся после входа администратора.</div></div>
       </section>
     </main>
@@ -219,8 +234,8 @@
   <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close icon-btn" data-close-modal aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button><div id="modal-content"></div></div></div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
-  <script src="./config.js?v=20261022-fix1"></script>
+  <script src="./config.js?v=20261022-events2"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261022-fix1" defer></script>
+  <script src="./app.js?v=20261022-events2" defer></script>
 </body>
 </html>

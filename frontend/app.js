@@ -281,8 +281,16 @@
     try { const result = await api('/api/global-display'); S.globalDisplay = result.settings || null; renderGlobalDisplay(); }
     catch (err) { console.warn('Global display is not available yet:', err.message); }
   }
+  function renderProfileAvatar() {
+    const button = $('#profile-btn'); if (!button) return;
+    const tgUser = tg?.initDataUnsafe?.user;
+    const photo = tgUser?.photo_url;
+    const fallback = String(tgUser?.first_name || S.user?.first_name || '•').trim().slice(0,1).toUpperCase() || '•';
+    button.innerHTML = photo ? `<img class="player-avatar-image" src="${esc(photo)}" alt="Аватар игрока" referrerpolicy="no-referrer"/><span class="online-dot"></span>` : `${esc(fallback)}<span class="online-dot"></span>`;
+    button.setAttribute('aria-label', `Профиль ${esc(tgUser?.first_name || S.user?.first_name || 'игрока')}`);
+  }
   function renderAll() {
-    renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent(); renderGlobalDisplay();
+    renderProfileAvatar(); renderBalance(); renderLive(); renderHome(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent(); renderGlobalDisplay();
     syncAdminNavigation();
   }
 
@@ -345,7 +353,7 @@
   async function checkGlobalSubscription() {
     try {
       const result = await api('/api/subscription/status?refresh=1');
-      if (!result.subscribed) return toast('Подписка не найдена. Подпишись на @NftGiftCaseNews и повтори проверку.', 'error', 5000);
+      if (!result.subscribed) return toast(result.error || 'Подписка не найдена. Проверь, что бот является администратором канала @NftGiftCaseNews, затем повтори проверку.', 'error', 7000);
       closeModal();
       await loadAll();
     } catch (err) {
@@ -772,6 +780,8 @@
     $('#admin-case-image').value=c.image_url||'case-rich.png';
     $('#admin-case-description').value=c.description||'';
     $('#admin-case-price').value=c.price_xtr ?? 39;
+    $('#admin-case-free').checked=Boolean(Number(c.is_free));
+    $('#admin-case-price').disabled=Boolean(Number(c.is_free));
     $('#admin-case-limit').value=c.max_opens??'';
     $('#admin-case-active').checked=Boolean(Number(c.active));
     const items=c.items||[];
@@ -791,11 +801,12 @@
   }
   async function adminCreateCase() {
     const title=$('#admin-new-case-title').value.trim();
-    const payload={title,description:$('#admin-new-case-description').value.trim(),imageUrl:$('#admin-new-case-image').value,priceXtr:Number($('#admin-new-case-price').value),maxOpens:$('#admin-new-case-limit').value===''?null:Number($('#admin-new-case-limit').value),active:false};
+    const payload={title,description:$('#admin-new-case-description').value.trim(),imageUrl:$('#admin-new-case-image').value,priceXtr:Number($('#admin-new-case-price').value),maxOpens:$('#admin-new-case-limit').value===''?null:Number($('#admin-new-case-limit').value),isFree:$('#admin-new-case-free').checked,active:false};
     if (!title) return toast('Введи название кейса','error');
-    if (!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1) return toast('Цена кейса должна быть не меньше 1 Star','error');
+    if (!payload.isFree && (!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1)) return toast('Цена кейса должна быть не меньше 1 Star','error');
+    if (payload.isFree) payload.priceXtr=0;
     if (MOCK) {
-      const id=`custom-${Date.now().toString(36)}`; const c={id,title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,is_free:0,active:0,max_opens:payload.maxOpens,opened_count:0,items:[]};S.cases.push(c);
+      const id=`custom-${Date.now().toString(36)}`; const c={id,title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,is_free:payload.isFree?1:0,active:0,max_opens:payload.maxOpens,opened_count:0,items:[]};S.cases.push(c);
       $('#admin-new-case-title').value=''; toast('DEMO: кейс создан только в текущем окне','info'); await loadAdmin(id); $('#admin-case-select').value=id; fillAdminCase(); return;
     }
     try {const result=await api('/api/admin/cases',{method:'POST',body:payload});$('#admin-new-case-title').value='';$('#admin-new-case-description').value='';toast('Кейс создан. Теперь добавь предметы и сохрани настройки.','success');await loadAdmin(result.case.id);$('#admin-case-select').value=result.case.id;fillAdminCase();}
@@ -836,11 +847,11 @@
     const itemIds=new Set($$('[data-item-chance]').map(input=>input.dataset.itemChance));
     const items=[...itemIds].map(id=>({id,chancePct:Number($(`[data-item-chance="${CSS.escape(id)}"]`).value),valueStars:Number($(`[data-item-price="${CSS.escape(id)}"]`).value),stockLimit:$(`[data-item-stock="${CSS.escape(id)}"]`).value===''?null:Number($(`[data-item-stock="${CSS.escape(id)}"]`).value)}));
     for(const item of items){if(!Number.isFinite(item.chancePct)||item.chancePct<=0||item.chancePct>100)return toast('Проверь шансы предметов: допустимо от 0,01 до 100%','error');if(!Number.isSafeInteger(item.valueStars)||item.valueStars<0)return toast('Проверь стоимость предмета','error');if(item.stockLimit!==null&&(!Number.isSafeInteger(item.stockLimit)||item.stockLimit<1))return toast('Количество должно быть больше нуля или пустым','error');}
-    const payload={title:$('#admin-case-title').value.trim(),description:$('#admin-case-description').value.trim(),imageUrl:$('#admin-case-image').value,priceXtr:Number($('#admin-case-price').value),maxOpens:$('#admin-case-limit').value===''?null:Number($('#admin-case-limit').value),active:$('#admin-case-active').checked,items};
+    const payload={title:$('#admin-case-title').value.trim(),description:$('#admin-case-description').value.trim(),imageUrl:$('#admin-case-image').value,isFree:$('#admin-case-free').checked,priceXtr:$('#admin-case-free').checked?0:Number($('#admin-case-price').value),maxOpens:$('#admin-case-limit').value===''?null:Number($('#admin-case-limit').value),active:$('#admin-case-active').checked,items};
     if(!payload.title)return toast('Название кейса не может быть пустым','error');
-    if(!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1)return toast('Цена кейса должна быть не меньше 1 Star','error');
+    if(!payload.isFree&&(!Number.isSafeInteger(payload.priceXtr)||payload.priceXtr<1))return toast('Цена кейса должна быть не меньше 1 Star','error');
     if(payload.maxOpens!==null&&(!Number.isSafeInteger(payload.maxOpens)||payload.maxOpens<1))return toast('Лимит должен быть больше нуля или пустым','error');
-    if(MOCK){const c=S.cases.find(item=>item.id===caseId);if(!c)return toast('Кейс не найден','error');Object.assign(c,{title:payload.title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,max_opens:payload.maxOpens,active:payload.active?1:0});for(const item of items){const found=c.items.find(i=>i.id===item.id);if(found){found.weight=Math.max(1,Math.round(item.chancePct*1000));found.value_stars=item.valueStars;found.stock_limit=item.stockLimit;}}if(payload.active&&!c.items.length){c.active=0;return toast('Добавь хотя бы один предмет перед активацией','error');}toast('DEMO: настройки обновлены только в текущем окне','info');renderAll();fillAdminCase();return;}
+    if(MOCK){const c=S.cases.find(item=>item.id===caseId);if(!c)return toast('Кейс не найден','error');Object.assign(c,{title:payload.title,description:payload.description,image_url:payload.imageUrl,price_xtr:payload.priceXtr,is_free:payload.isFree?1:0,max_opens:payload.maxOpens,active:payload.active?1:0});for(const item of items){const found=c.items.find(i=>i.id===item.id);if(found){found.weight=Math.max(1,Math.round(item.chancePct*1000));found.value_stars=item.valueStars;found.stock_limit=item.stockLimit;}}if(payload.active&&!c.items.length){c.active=0;return toast('Добавь хотя бы один предмет перед активацией','error');}toast('DEMO: настройки обновлены только в текущем окне','info');renderAll();fillAdminCase();return;}
     try {await api(`/api/admin/cases/${encodeURIComponent(caseId)}`,{method:'PATCH',body:payload});toast('Настройки кейса сохранены','success');await loadAdmin(caseId);await refreshUserData();}
     catch(err){toast(err.message,'error');}
   }
@@ -993,6 +1004,8 @@
     if(event.target.id==='gift-catalog-search'){S.catalogSearch=event.target.value;renderGiftCatalog();}
     if(event.target.id==='bet-range'){S.upgradeBet=Number(event.target.value);updateUpgradeChance();}
     if(event.target.id==='admin-case-select')fillAdminCase();
+    if(event.target.id==='admin-new-case-free')$('#admin-new-case-price').disabled=event.target.checked;
+    if(event.target.id==='admin-case-free')$('#admin-case-price').disabled=event.target.checked;
     if(event.target.id==='admin-event-type'&&MOCK){const title=event.target.value==='advent'?'Адвент-календарь':'Halloween Pass';$('#admin-event-title').value=title;}
     if(event.target.id==='admin-reward-event-type'){syncEventRewardBranch();}
     if(event.target.id==='admin-reward-branch'||event.target.id==='admin-reward-level'||event.target.id==='admin-event-reward-type'){syncEventRewardEditor();}

@@ -544,7 +544,7 @@ export function createApp(envProvider = () => ({})) {
       if (req.query?.refresh === '1') { try { await dbRun(dbOf(req), 'DELETE FROM subscription_status_cache WHERE telegram_id=?', String(req.user.telegram_id)); } catch { /* cache table may not exist yet */ } }
       const subscribed = await requireSubscription(req, req.user.telegram_id);
       return json(res, 200, { ok: true, subscribed, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews' });
-    } catch (err) { return json(res, 200, { ok: true, subscribed: false, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews', error: err.message }); }
+    } catch (err) { return json(res, 200, { ok: true, subscribed: false, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews', error: `Не удалось проверить подписку. Убедитесь, что бот — администратор канала @NftGiftCaseNews. Причина: ${err.message}` }); }
   });
 
   const claimFreeGift = async (req, res) => {
@@ -865,7 +865,8 @@ export function createApp(envProvider = () => ({})) {
     const title = String(req.body?.title || '').trim();
     const description = String(req.body?.description || '').trim().slice(0, 180);
     const imageUrl = normalizeImageUrl(req.body?.imageUrl);
-    const price = adminInteger(req.body?.priceXtr, 1, 1000000);
+    const isFree = Boolean(req.body?.isFree);
+    const price = isFree ? 0 : adminInteger(req.body?.priceXtr, 1, 1000000);
     const maxRaw = req.body?.maxOpens;
     const maxOpens = maxRaw === '' || maxRaw === null || maxRaw === undefined ? null : adminInteger(maxRaw, 1, 100000000);
     if (title.length < 2 || title.length > 48) return fail(res, 400, 'Название кейса должно содержать от 2 до 48 символов');
@@ -874,7 +875,7 @@ export function createApp(envProvider = () => ({})) {
     if (maxRaw !== '' && maxRaw !== null && maxRaw !== undefined && maxOpens === null) return fail(res, 400, 'Лимит открытий должен быть положительным целым числом');
     const caseId = `custom-${id().replaceAll('-', '').slice(0, 16)}`;
     const sort = Number((await dbFirst(db, 'SELECT COALESCE(MAX(sort_order),0)+10 AS next_sort FROM cases'))?.next_sort || 100);
-    await dbRun(db, `INSERT INTO cases(id,title,description,image_url,price_xtr,is_free,active,max_opens,sort_order) VALUES(?,?,?,?,?,0,0,?,?)`, caseId, title, description, imageUrl, price, maxOpens, sort);
+    await dbRun(db, `INSERT INTO cases(id,title,description,image_url,price_xtr,is_free,active,max_opens,sort_order) VALUES(?,?,?,?,?,?,0,?,?)`, caseId, title, description, imageUrl, price, isFree ? 1 : 0, maxOpens, sort);
     return json(res, 201, { ok:true, case:await dbFirst(db, 'SELECT * FROM cases WHERE id=?', caseId) });
   });
 
@@ -968,8 +969,9 @@ export function createApp(envProvider = () => ({})) {
       if (!imageUrl) return fail(res, 400, 'Некорректное изображение');
       updates.push('image_url=?'); args.push(imageUrl);
     }
+    if (req.body?.isFree !== undefined) { updates.push('is_free=?'); args.push(req.body.isFree ? 1 : 0); }
     if (req.body?.priceXtr !== undefined) {
-      const price = adminInteger(req.body.priceXtr, 1, 1000000);
+      const price = (req.body?.isFree === true || (req.body?.isFree === undefined && Number(c.is_free) === 1)) && Number(req.body.priceXtr) === 0 ? 0 : adminInteger(req.body.priceXtr, 1, 1000000);
       if (price === null) return fail(res, 400, 'Цена открытия должна быть от 1 до 1 000 000 Stars');
       updates.push('price_xtr=?'); args.push(price);
     }

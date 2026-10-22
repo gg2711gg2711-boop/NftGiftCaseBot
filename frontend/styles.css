@@ -72,3 +72,5 @@
 .admin-abuse-panel { border-color: rgba(255, 111, 139, .24); background: linear-gradient(140deg, rgba(45, 25, 42, .92), rgba(23, 25, 40, .98)); }
 .admin-abuse-panel h2 { color: #ffb4c2; }
 .quest-manager-panel textarea { width: 100%; resize: vertical; }
+
+.avatar-btn{overflow:hidden;padding:0;display:inline-flex;align-items:center;justify-content:center}.player-avatar-image{width:100%;height:100%;object-fit:cover;border-radius:50%;display:block}

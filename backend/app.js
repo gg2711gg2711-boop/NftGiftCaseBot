@@ -37,33 +37,75 @@ function secureInt(maxExclusive) {
   return n % maxExclusive;
 }
 
+
 function validateTelegramInitData(raw, botToken) {
-  if (!raw || !botToken) throw new Error('Telegram initData or BOT_TOKEN is missing');
+  if (!raw || !botToken) {
+    throw new Error('Telegram initData or BOT_TOKEN is missing');
+  }
+
   const params = new URLSearchParams(raw);
   const receivedHash = params.get('hash');
   const authDate = Number(params.get('auth_date'));
-  if (!receivedHash || !Number.isFinite(authDate)) throw new Error('Malformed Telegram initData');
+
+  if (!receivedHash || !Number.isFinite(authDate)) {
+    throw new Error('Malformed Telegram initData');
+  }
+
   const current = Math.floor(Date.now() / 1000);
-  if (authDate > current + 30 || current - authDate > MAX_INIT_AGE_SECONDS) throw new Error('Telegram initData has expired');
+
+  if (
+    authDate > current + 30 ||
+    current - authDate > MAX_INIT_AGE_SECONDS
+  ) {
+    throw new Error('Telegram initData has expired');
+  }
+
   const dataCheckString = [...params.entries()]
     .filter(([key]) => key !== 'hash')
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
-  // Telegram's documented order: HMAC(key=botToken, data='WebAppData').
-  const secretKey = createHmac('sha256', botToken).update('WebAppData').digest();
-  const calculated = createHmac('sha256', secretKey).update(dataCheckString).digest('hex');
+
+  // Сначала создаём секретный ключ Telegram.
+  const secretKey = createHmac('sha256', 'WebAppData')
+    .update(botToken)
+    .digest();
+
+  // Затем проверяем подпись initData.
+  const calculated = createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+
   const a = Buffer.from(calculated, 'hex');
   const b = Buffer.from(receivedHash, 'hex');
-  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error('Telegram initData signature is invalid');
-  const userText = params.get('user');
-  if (!userText) throw new Error('Telegram user is missing from initData');
-  let user;
-  try { user = JSON.parse(userText); } catch { throw new Error('Telegram user payload is invalid'); }
-  if (!user?.id) throw new Error('Telegram user id is missing');
-  return { user, startParam: params.get('start_param') || '' };
-}
 
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    throw new Error('Telegram initData signature is invalid');
+  }
+
+  const userText = params.get('user');
+
+  if (!userText) {
+    throw new Error('Telegram user is missing from initData');
+  }
+
+  let user;
+
+  try {
+    user = JSON.parse(userText);
+  } catch {
+    throw new Error('Telegram user payload is invalid');
+  }
+
+  if (!user?.id) {
+    throw new Error('Telegram user id is missing');
+  }
+
+  return {
+    user,
+    startParam: params.get('start_param') || ''
+  };
+}
 async function telegramCall(env, method, body) {
   if (!env.BOT_TOKEN) throw new Error('BOT_TOKEN is not configured');
   const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {

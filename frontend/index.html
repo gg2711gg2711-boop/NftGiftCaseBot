@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=20261022-fix1" />
 </head>
 <body>
   <div class="app-shell">
@@ -93,8 +93,9 @@
         <div class="quantity-row" id="quantity-row" aria-label="Количество прокрутов">
           <button class="qty-chip active" data-qty="1">x1</button><button class="qty-chip" data-qty="2">x2</button><button class="qty-chip" data-qty="3">x3</button><button class="qty-chip" data-qty="4">x4</button><button class="qty-chip" data-qty="5">x5</button>
         </div>
-        <button id="open-case-btn" class="primary-btn wide-btn">Открыть за 39 Stars</button>
-        <p class="legal-note">Оплата проходит через официальный интерфейс Telegram Stars. Выпадение предмета определяется на сервере.</p>
+        <button id="open-case-btn" class="primary-btn wide-btn">Оплатить 39 Stars</button>
+        <button id="open-case-balance-btn" class="secondary-btn wide-btn">Открыть за 39 кредитов</button>
+        <p class="legal-note">Выберите оплату Telegram Stars или внутренними кредитами. Выпадение предмета определяется на сервере.</p>
         <div class="section-heading section-heading-spaced"><h2>Что может выпасть</h2><button class="text-btn" id="odds-toggle">Шансы</button></div>
         <div id="odds-list" class="drop-grid"></div>
       </section>
@@ -111,7 +112,7 @@
                 <circle cx="180" cy="180" r="142" fill="none" stroke="#8a80ff" stroke-width="23" stroke-dasharray="18 875" transform="rotate(-90 180 180)" id="chance-sector" stroke-linecap="round" />
                 <circle cx="180" cy="180" r="122" fill="url(#wheelFill)" stroke="#0e1220" stroke-width="7" />
                 <g id="wheel-ticks" stroke="#a8afc8" stroke-width="2" opacity=".55"></g>
-                <g id="wheel-center-art"><image id="wheel-item-image" href="./assets/rifle.png" x="95" y="95" width="170" height="170" preserveAspectRatio="xMidYMid meet" /></g>
+                <g id="wheel-center-art"><image id="wheel-item-image" href="./assets/ring.png" x="95" y="95" width="170" height="170" preserveAspectRatio="xMidYMid meet" /></g>
               </svg>
               <div class="wheel-pointer"></div>
               <div class="wheel-chance" id="wheel-chance">12.5%</div>
@@ -163,7 +164,12 @@
       <section id="admin-view" class="view">
         <div class="page-title-row"><div><p class="eyebrow">PRIVATE TOOLS</p><h1>Админ-панель</h1></div><span class="admin-badge">ADMIN</span></div>
         <div class="panel admin-panel">
-          <h2>Баланс пользователя</h2><div class="form-grid"><label>Telegram ID<input id="admin-user-id" value="1080484217" inputmode="numeric" /></label><label>Сумма<input id="admin-balance-amount" type="number" min="1" value="50" /></label></div><div class="button-row"><button id="admin-credit-btn" class="small-primary">Начислить</button><button id="admin-debit-btn" class="secondary-btn">Списать</button></div>
+          <h2>Награды игроку</h2>
+          <p class="muted-note">Введи Telegram ID. Можно начислить баланс, выдать подарок отдельно или сделать оба действия одновременно. Если игрок ещё не открывал Mini App, его запись будет создана автоматически.</p>
+          <div class="form-grid"><label>Telegram ID<input id="admin-user-id" value="1080484217" inputmode="numeric" /></label><label>Кредиты<input id="admin-balance-amount" type="number" min="1" max="1000000" value="50" /></label></div>
+          <label>Подарок (для выдачи или совместного начисления)<select id="admin-reward-item"><option value="">Не выдавать подарок</option></select></label>
+          <div class="button-row"><button id="admin-credit-btn" class="small-primary">Начислить баланс</button><button id="admin-debit-btn" class="secondary-btn">Списать баланс</button></div>
+          <div class="button-row"><button id="admin-gift-btn" class="secondary-btn">Выдать подарок</button><button id="admin-combo-btn" class="small-primary">Баланс + подарок</button></div>
         </div>
         <div class="panel admin-panel case-builder-panel">
           <h2>Создать кейс</h2>
@@ -213,8 +219,8 @@
   <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close icon-btn" data-close-modal aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button><div id="modal-content"></div></div></div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
-  <script src="./config.js"></script>
+  <script src="./config.js?v=20261022-fix1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=20261022-fix1" defer></script>
 </body>
 </html>

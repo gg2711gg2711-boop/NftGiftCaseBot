@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261023-clean-home1" />
+  <link rel="stylesheet" href="./styles.css?v=20261023-halloween1" />
 </head>
 <body>
   <div class="app-shell">
@@ -38,6 +38,12 @@
         <button id="topup-btn" class="primary-btn topup-btn">Пополнить</button>
         <button id="profile-btn" class="avatar-btn" aria-label="Профиль">•<span class="online-dot"></span></button>
       </div>
+    </div>
+
+    <div id="halloween-theme-banner" class="halloween-theme-banner hidden" role="status" aria-live="polite">
+      <span class="halloween-theme-icon">🎃</span>
+      <div><strong>HALLOWEEN MODE</strong><small>GiftCase · сезонное оформление</small></div>
+      <span class="halloween-spark">✦</span>
     </div>
 
     <section id="global-display" class="global-display hidden" aria-label="Глобальное сообщение и таймер">
@@ -171,6 +177,12 @@
 
       <section id="admin-view" class="view">
         <div class="page-title-row"><div><p class="eyebrow">PRIVATE TOOLS</p><h1>Админ-панель</h1></div><span class="admin-badge">ADMIN</span></div>
+        <div class="panel admin-panel theme-admin-panel">
+          <div class="theme-admin-heading"><span class="theme-admin-icon">🎃</span><div><h2>Оформление приложения</h2><p class="muted-note">Переключай стиль для всех игроков. Настройка сохранится на сервере и автоматически применится в открытых приложениях.</p></div></div>
+          <div id="admin-theme-status" class="theme-admin-status">✨ Сейчас используется обычное оформление GiftCase.</div>
+          <button id="admin-theme-toggle" class="small-primary theme-admin-toggle">🎃 Включить Halloween</button>
+          <p class="muted-note theme-admin-footnote">Halloween: чёрно-фиолетовый фон, тыквенно-оранжевые акценты и сезонный баннер. Повторное нажатие вернёт обычную тему.</p>
+        </div>
         <div class="panel admin-panel">
           <h2>Награды игроку</h2>
           <p class="muted-note">Введи Telegram ID. Можно начислить баланс, выдать подарок отдельно или сделать оба действия одновременно. Если игрок ещё не открывал Mini App, его запись будет создана автоматически.</p>
@@ -264,6 +276,6 @@
 
   <script src="./config.js?v=20261023-offers-broadcasts1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261023-clean-home1" defer></script>
+  <script src="./app.js?v=20261023-halloween1" defer></script>
 </body>
 </html>

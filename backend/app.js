@@ -36,6 +36,7 @@ function adminActionLabel(req) {
   if (path.includes('/event')) return 'Настройки события';
   if (path.includes('/quests')) return 'Редактор квестов';
   if (path.includes('/global-display')) return 'Глобальное сообщение / таймер';
+  if (path.includes('/theme')) return 'Оформление приложения';
   return 'Административное действие';
 }
 function normalizeImageUrl(value) {
@@ -525,6 +526,18 @@ export function createApp(envProvider = () => ({})) {
     const db = dbOf(req);
     const event = await dbFirst(db, 'SELECT enabled,event_type,title,ends_at,premium_price_xtr FROM event_settings WHERE id=1');
     return json(res, 200, { ok: true, event, channel: envOf(req).SUBSCRIPTION_CHANNEL || '@NftGiftCaseNews', botUsername: String(envOf(req).BOT_USERNAME || '').replace(/^@/, ''), referralPercent: Number(envOf(req).REFERRAL_PERCENT || 5) });
+  });
+
+  // Public read endpoint: the selected theme is global and shared by all players.
+  // If the migration is not installed yet, keep the app usable with the classic theme.
+  app.get('/api/theme', async (req, res) => {
+    try {
+      const row = await dbFirst(dbOf(req), 'SELECT theme,updated_at FROM app_theme_settings WHERE id=1');
+      return json(res, 200, { ok:true, theme:row?.theme === 'halloween' ? 'halloween' : 'normal', updatedAt:row?.updated_at || null, available:true });
+    } catch (err) {
+      console.warn('Theme settings are not available yet:', err?.message || err);
+      return json(res, 200, { ok:true, theme:'normal', updatedAt:null, available:false });
+    }
   });
 
   app.get('/api/me', async (req, res) => {
@@ -1254,6 +1267,21 @@ export function createApp(envProvider = () => ({})) {
   app.get('/api/global-display', async (req, res) => {
     const settings = await dbFirst(dbOf(req), 'SELECT * FROM global_display_settings WHERE id=1');
     return json(res, 200, { ok:true, settings:settings || { id:1,message_enabled:0,message_title:'Новости NftGiftCase',message_body:'',timer_enabled:0,timer_title:'До завершения события',timer_ends_at:null } });
+  });
+
+  app.patch('/api/admin/theme', requireAdmin, async (req, res) => {
+    const db = dbOf(req);
+    const theme = String(req.body?.theme || '').trim();
+    if (!['normal', 'halloween'].includes(theme)) return fail(res, 400, 'Выбери обычную или Halloween-тему');
+    try {
+      await dbRun(db, `INSERT INTO app_theme_settings(id,theme,updated_at,updated_by) VALUES(1,?,CURRENT_TIMESTAMP,?)
+        ON CONFLICT(id) DO UPDATE SET theme=excluded.theme,updated_at=CURRENT_TIMESTAMP,updated_by=excluded.updated_by`, theme, String(req.user?.telegram_id || ''));
+      const saved = await dbFirst(db, 'SELECT theme,updated_at FROM app_theme_settings WHERE id=1');
+      return json(res, 200, { ok:true, theme:saved?.theme === 'halloween' ? 'halloween' : 'normal', updatedAt:saved?.updated_at || null, message:theme === 'halloween' ? 'Halloween-оформление включено для всех игроков' : 'Обычное оформление восстановлено для всех игроков' });
+    } catch (err) {
+      console.error('Theme save failed:', err?.stack || err);
+      return fail(res, 500, 'Не удалось сохранить тему. Примени миграцию db/0007_halloween_theme.sql к удалённой D1-базе и повтори попытку.');
+    }
   });
 
   app.patch('/api/admin/global-display', requireAdmin, async (req, res) => {

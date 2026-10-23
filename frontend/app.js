@@ -9,7 +9,7 @@
   const S = {
     view: 'home', filter: 'all', search: '', cases: [], currentCase: null, quantity: 1,
     balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
-    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
+    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
     demoInventory: [], lastSpin: null, caseSort: false
   };
   const mockItems = [
@@ -78,6 +78,63 @@
       throw error;
     }
     return data;
+  }
+
+  function applyTheme(mode) {
+    const theme = mode === 'halloween' ? 'halloween' : 'normal';
+    S.themeMode = theme;
+    document.documentElement.dataset.theme = theme;
+    const halloweenBanner = $('#halloween-theme-banner');
+    if (halloweenBanner) halloweenBanner.classList.toggle('hidden', theme !== 'halloween');
+    const themeToggle = $('#admin-theme-toggle');
+    if (themeToggle) {
+      themeToggle.textContent = theme === 'halloween' ? '↩️ Вернуть обычный интерфейс' : '🎃 Включить Halloween';
+      themeToggle.classList.toggle('halloween-restore-btn', theme === 'halloween');
+    }
+    const themeStatus = $('#admin-theme-status');
+    if (themeStatus) themeStatus.textContent = theme === 'halloween'
+      ? '🎃 Halloween включён. Оформление изменено у всех игроков.'
+      : '✨ Сейчас используется обычное оформление GiftCase.';
+    const themeColor = theme === 'halloween' ? '#170b19' : '#171a29';
+    const backgroundColor = theme === 'halloween' ? '#100811' : '#0f1016';
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.content = themeColor;
+    try {
+      tg?.setHeaderColor?.(themeColor);
+      tg?.setBackgroundColor?.(backgroundColor);
+      tg?.setBottomBarColor?.(themeColor);
+    } catch { /* Theme colors are optional on older Telegram clients. */ }
+  }
+
+  async function loadTheme() {
+    if (MOCK) { applyTheme(S.themeMode); return; }
+    try {
+      const result = await api('/api/theme');
+      applyTheme(result.theme);
+    } catch (err) {
+      console.warn('Unable to load global theme:', err.message);
+      applyTheme(S.themeMode);
+    }
+  }
+
+  async function toggleAdminTheme() {
+    if (!S.isAdmin) return toast('Доступ запрещён', 'error');
+    const nextTheme = S.themeMode === 'halloween' ? 'normal' : 'halloween';
+    const button = $('#admin-theme-toggle');
+    if (MOCK) {
+      applyTheme(nextTheme);
+      return toast('DEMO: тема переключена только в текущем окне, сервер не изменён', 'info', 4500);
+    }
+    if (button) button.disabled = true;
+    try {
+      const result = await api('/api/admin/theme', { method:'PATCH', body:{ theme:nextTheme } });
+      applyTheme(result.theme);
+      toast(result.message || 'Тема приложения обновлена', 'success', 4500);
+    } catch (err) {
+      toast(err.message || 'Не удалось сменить оформление', 'error', 5000);
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function toast(message, type = 'info', duration = 3200) {
@@ -154,6 +211,7 @@
       ]);
       S.config = config; S.user = me.user; S.balance = Number(me.user.balance || 0); S.isAdmin = Boolean(me.isAdmin);
       S.cases = cases.cases; S.wins = wins.wins; S.inventory = inventory.items; S.eventData = event;
+      await loadTheme();
       await loadGlobalDisplay();
       try { await loadOffers(); } catch (offerError) { console.warn('Limited offers are unavailable:', offerError.message); }
       renderAll();
@@ -621,7 +679,7 @@
     if(MOCK) { renderAll(); return; }
     try {
       const [me, cases, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/cases'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
-      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;await loadGlobalDisplay();renderAll();fillAdminRewardSelector();
+      S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;await loadTheme();await loadGlobalDisplay();renderAll();fillAdminRewardSelector();
     } catch(err) {
       console.warn(err);
       if (err.code === 'SUBSCRIPTION_REQUIRED') showMandatorySubscriptionModal(err.message);
@@ -821,6 +879,7 @@
 
   async function loadAdmin(preselectId = '') {
     if(!S.isAdmin) { toast('Доступ запрещён','error');return setView('home'); }
+    applyTheme(S.themeMode);
     fillGiftSelector();
     fillAdminRewardSelector();
     if(!$('#admin-offer-start').value)resetOfferEditor();
@@ -1093,6 +1152,7 @@
     if(target.matches('[data-confirm-withdraw]')) {withdraw(target.dataset.confirmWithdraw);return;}
     if(target.matches('[data-check-global-subscription]')) {checkGlobalSubscription();return;}
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
+    if(target.id==='admin-theme-toggle') {toggleAdminTheme();return;}
     if(target.id==='admin-credit-btn') {adminBalance('add');return;} if(target.id==='admin-debit-btn') {adminBalance('subtract');return;}
     if(target.id==='admin-offer-save') {adminSaveOffer();return;} if(target.id==='admin-offer-reset') {resetOfferEditor();return;}
     if(target.matches('[data-admin-offer-edit]')) {fillOfferEditor(target.dataset.adminOfferEdit);return;}
@@ -1141,7 +1201,7 @@
   if(tg?.BackButton) { tg.BackButton.onClick(()=>setView('home')); }
   window.addEventListener('focus',()=>{if(!MOCK)refreshUserData();});
   window.setInterval(()=>{updateGlobalCountdown();},1000);
-  window.setInterval(()=>{if(!MOCK&&document.visibilityState==='visible'){api('/api/live-wins').then(r=>{S.wins=r.wins;renderLive();}).catch(()=>{});api('/api/global-display').then(r=>{S.globalDisplay=r.settings;renderGlobalDisplay();}).catch(()=>{});loadOffers().catch(()=>{});}},30000);
+  window.setInterval(()=>{if(!MOCK&&document.visibilityState==='visible'){api('/api/live-wins').then(r=>{S.wins=r.wins;renderLive();}).catch(()=>{});api('/api/global-display').then(r=>{S.globalDisplay=r.settings;renderGlobalDisplay();}).catch(()=>{});api('/api/theme').then(r=>{if(r.theme!==S.themeMode)applyTheme(r.theme);}).catch(()=>{});loadOffers().catch(()=>{});}},30000);
   window.addEventListener('error',event=>console.error('NftGiftCase UI error',event.message));
   syncSoundButton(); loadAll();
 })();

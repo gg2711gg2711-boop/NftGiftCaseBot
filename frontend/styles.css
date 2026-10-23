@@ -79,3 +79,82 @@
 .home-offers-section{margin:22px 0 8px}.home-offers-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.limited-offer-card{position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;border:1px solid rgba(244,190,78,.27);border-radius:18px;background:radial-gradient(ellipse at 0 0,rgba(244,186,64,.12),transparent 58%),linear-gradient(145deg,#25283b,#171a28 82%);box-shadow:0 10px 26px rgba(0,0,0,.18)}.limited-offer-art{position:relative;aspect-ratio:1.45/1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:radial-gradient(ellipse at 50% 75%,rgba(239,187,72,.18),transparent 67%),linear-gradient(140deg,#292a3a,#171a29)}.limited-offer-art img{width:88%;height:88%;object-fit:contain;filter:drop-shadow(0 7px 12px rgba(0,0,0,.35))}.limited-offer-stamp{position:absolute;right:8px;top:8px;border:1px solid rgba(255,219,133,.38);background:rgba(31,27,20,.77);border-radius:7px;padding:4px 6px;color:#ffdf8a;font-size:7px;font-weight:900;letter-spacing:.08em}.limited-offer-info{display:flex;flex-direction:column;flex:1;gap:6px;padding:10px}.limited-offer-kicker{font-size:8px;font-weight:900;color:#f8d47d;letter-spacing:.025em}.limited-offer-info h3{font-size:12px;font-weight:900;line-height:1.3;margin:0;color:#f7f0dd;overflow-wrap:anywhere}.limited-offer-info p{font-size:9px;line-height:1.45;color:#a8b0c7;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.limited-offer-reward{font-size:9px;font-weight:800;color:#efdcaa;line-height:1.4}.limited-offer-meta{display:flex;flex-direction:column;gap:3px;color:#8d98b4;font-size:8px;line-height:1.3;margin-top:auto}.limited-offer-buy{display:flex;align-items:center;justify-content:space-between;gap:7px;border-top:1px solid rgba(172,153,93,.15);padding-top:8px;margin-top:2px}.limited-offer-buy strong{font-size:11px;color:#ffe09a;white-space:nowrap}.limited-offer-buy button{font-size:9px;padding:8px 10px;white-space:nowrap}.limited-offer-card.compact .limited-offer-art{aspect-ratio:1.5/1}.limited-offer-card.compact .limited-offer-info{padding:9px;gap:5px}.limited-offer-card.compact .limited-offer-info h3{font-size:11px}.limited-offer-card.compact .limited-offer-info p{font-size:8px;-webkit-line-clamp:2}.limited-offer-card.compact .limited-offer-meta{display:none}.shop-intro{padding:14px;margin-bottom:12px;border-color:rgba(244,190,78,.22)}.shop-intro strong{font-size:12px;color:#f7d887}.shop-intro p{font-size:10px;line-height:1.6;color:#a7b0c6;margin:5px 0 0}.shop-offers-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.admin-subheading{font-weight:900;font-size:12px;margin:2px 0 10px;color:#e8eafa}.offer-admin-panel textarea,.broadcast-admin-panel textarea{width:100%;resize:vertical;line-height:1.5}.admin-offer-row,.admin-broadcast-row,.admin-audit-row{display:flex;align-items:center;gap:9px;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(117,130,174,.15)}.admin-offer-row:last-child,.admin-broadcast-row:last-child,.admin-audit-row:last-child{border-bottom:0}.admin-offer-row-main,.admin-broadcast-row>div,.admin-audit-row{min-width:0}.admin-offer-row-main{flex:1}.admin-offer-row strong,.admin-broadcast-row strong,.admin-audit-row strong{font-size:10px;font-weight:900;display:block;color:#f0f1fb;overflow-wrap:anywhere}.admin-offer-row small,.admin-broadcast-row small,.admin-audit-row small{display:block;font-size:8px;line-height:1.6;color:#9ba6c2;margin-top:4px;overflow-wrap:anywhere}.admin-offer-actions{display:flex;flex-direction:column;gap:5px;flex:0 0 auto;max-width:104px}.admin-offer-actions button,.admin-broadcast-row button{font-size:8px;padding:7px 8px;white-space:nowrap}.admin-broadcast-row>div{flex:1}.admin-audit-row{align-items:flex-start;flex-direction:column;gap:2px}.admin-audit-row small{margin-top:0}.broadcast-admin-panel{border-color:rgba(128,143,255,.23)}.audit-admin-panel{border-color:rgba(114,215,185,.2)}.shop-nav{color:#f0d18a}.shop-nav.active{background:linear-gradient(120deg,#79622a,#564523);color:#fff4cf}.shop-nav .nav-icon svg{stroke:currentColor}.bottom-nav .nav-item{padding-left:6px;padding-right:6px;min-width:48px}.bottom-nav .nav-item span:last-child{white-space:nowrap}
 @media(min-width:620px){.shop-offers-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.limited-offer-card:not(.compact){flex-direction:row;min-height:210px}.limited-offer-card:not(.compact) .limited-offer-art{flex:0 0 42%;aspect-ratio:auto;min-height:180px}.limited-offer-card:not(.compact) .limited-offer-info{padding:14px}.limited-offer-card:not(.compact) .limited-offer-info h3{font-size:14px}.limited-offer-card:not(.compact) .limited-offer-info p{font-size:10px}.limited-offer-card:not(.compact) .limited-offer-meta{font-size:9px}}
 @media(max-width:400px){.home-offers-grid,.shop-offers-grid{gap:7px}.limited-offer-card.compact .limited-offer-info{padding:7px}.limited-offer-card.compact .limited-offer-buy{align-items:flex-start;flex-direction:column}.limited-offer-card.compact .limited-offer-buy button{width:100%}.bottom-nav .nav-item{padding-left:4px;padding-right:4px;min-width:42px;font-size:8px}.bottom-nav .nav-icon svg{width:17px;height:17px}}
+
+
+/* Global seasonal theme: administrator can switch between Classic and Halloween. */
+html[data-theme="halloween"] {
+  --bg:#100811; --shell:#1b1021; --panel:#28182f; --panel-2:#35203d; --line:#523451;
+  --text:#fff6f0; --muted:#d2b7c9; --muted-2:#a78aa6; --purple:#ff7c2b; --purple-2:#ff9b45;
+  --blue:#b77aff; --green:#d5fa82; --gold:#ffac37; --red:#ff6682;
+}
+html[data-theme="halloween"] body { background:var(--bg); }
+html[data-theme="halloween"] .app-shell {
+  background:radial-gradient(ellipse at 0% 0%,rgba(123,42,122,.28),transparent 34%),radial-gradient(ellipse at 100% 10%,rgba(255,98,26,.14),transparent 30%),linear-gradient(180deg,#1b1021 0,#130b18 440px,#180e1e 100%);
+}
+html[data-theme="halloween"] .brand-case { color:#ff9b31; }
+html[data-theme="halloween"] .brand-underline { background:#ff7b26; }
+html[data-theme="halloween"] .primary-btn,
+html[data-theme="halloween"] .small-primary,
+html[data-theme="halloween"] .tag-price,
+html[data-theme="halloween"] .filter-chip.selected {
+  background:linear-gradient(115deg,#ff6d22,#a83bcb); box-shadow:0 5px 18px rgba(255,100,28,.17),inset 0 1px 0 rgba(255,255,255,.19);
+}
+html[data-theme="halloween"] .case-card,
+html[data-theme="halloween"] .panel,
+html[data-theme="halloween"] .shop-intro,
+html[data-theme="halloween"] .limited-offer-card,
+html[data-theme="halloween"] .inventory-card,
+html[data-theme="halloween"] .quest-card,
+html[data-theme="halloween"] .level-card {
+  border-color:rgba(211,112,224,.22);
+  box-shadow:inset 0 1px 0 rgba(255,179,107,.035),0 8px 24px rgba(0,0,0,.16);
+}
+html[data-theme="halloween"] .case-art,
+html[data-theme="halloween"] .limited-offer-art,
+html[data-theme="halloween"] .case-stage,
+html[data-theme="halloween"] .target-card,
+html[data-theme="halloween"] .bet-card {
+  background:radial-gradient(ellipse at 50% 75%,rgba(255,110,25,.16),transparent 65%),linear-gradient(145deg,#38233e,#1e1427 72%,#27142b);
+}
+html[data-theme="halloween"] .nav-item.active,
+html[data-theme="halloween"] .shop-nav.active {
+  background:linear-gradient(120deg,#a642b7,#e96c25); color:#fff8f1;
+}
+html[data-theme="halloween"] .bottom-nav {
+  background:rgba(26,14,33,.96); border-color:rgba(210,116,211,.23); box-shadow:0 -8px 28px rgba(0,0,0,.24);
+}
+html[data-theme="halloween"] .live-strip,
+html[data-theme="halloween"] .live-card,
+html[data-theme="halloween"] .balance-pill,
+html[data-theme="halloween"] .icon-btn {
+  border-color:rgba(209,124,195,.24); background-color:rgba(54,31,62,.7);
+}
+html[data-theme="halloween"] .live-dot { background:#ff852b; box-shadow:0 0 0 4px rgba(255,133,43,.14); }
+html[data-theme="halloween"] .eyebrow,
+html[data-theme="halloween"] .global-kicker { color:#ffa45b; }
+html[data-theme="halloween"] .shop-nav { color:#ffb45e; }
+html[data-theme="halloween"] .modal-card { border-color:rgba(224,128,194,.27); background:linear-gradient(150deg,#35203e,#1b1024); }
+html[data-theme="halloween"] .modal-backdrop { background:rgba(8,3,10,.8); }
+html[data-theme="halloween"] .admin-abuse-panel { background:linear-gradient(140deg,rgba(65,25,46,.92),rgba(27,15,34,.98)); }
+html[data-theme="halloween"] .halloween-theme-banner {
+  display:flex; align-items:center; gap:10px; margin:0 14px 12px; padding:10px 12px; border:1px solid rgba(255,139,56,.36); border-radius:14px;
+  background:radial-gradient(ellipse at 100% 0%,rgba(150,49,167,.26),transparent 48%),linear-gradient(100deg,rgba(74,32,80,.96),rgba(47,22,39,.96));
+  color:#fff4e8; box-shadow:0 7px 22px rgba(0,0,0,.16),inset 0 1px 0 rgba(255,196,128,.08);
+}
+.halloween-theme-banner.hidden { display:none!important; }
+.halloween-theme-icon { display:grid;place-items:center;width:35px;height:35px;flex:0 0 35px;border-radius:11px;background:rgba(255,129,41,.14);border:1px solid rgba(255,165,79,.28);font-size:21px; }
+.halloween-theme-banner strong { display:block;font-size:10px;font-weight:950;letter-spacing:.13em;color:#ffb05f; }
+.halloween-theme-banner small { display:block;margin-top:3px;font-size:9px;color:#d7b9d2; }
+.halloween-spark { margin-left:auto;color:#ffad45;font-size:22px; }
+html[data-theme="halloween"] .theme-admin-panel { border-color:rgba(255,132,53,.28);background:radial-gradient(ellipse at 100% 0%,rgba(143,54,151,.16),transparent 45%),linear-gradient(140deg,rgba(43,27,48,.96),rgba(28,23,40,.98)); }
+.theme-admin-heading { display:flex;align-items:flex-start;gap:11px; }
+.theme-admin-heading h2 { margin:0 0 5px;font-size:15px;font-weight:900; }
+.theme-admin-heading .muted-note { margin:0;line-height:1.55; }
+.theme-admin-icon { display:grid;place-items:center;width:42px;height:42px;flex:0 0 42px;border-radius:14px;background:rgba(112,100,255,.14);border:1px solid rgba(142,126,255,.24);font-size:24px; }
+html[data-theme="halloween"] .theme-admin-icon { background:rgba(255,124,43,.14);border-color:rgba(255,150,69,.24); }
+.theme-admin-status { margin:14px 0 10px;padding:10px 11px;border:1px solid rgba(150,150,190,.18);border-radius:12px;background:rgba(13,12,22,.22);font-size:11px;line-height:1.5;color:var(--text); }
+html[data-theme="halloween"] .theme-admin-status { border-color:rgba(255,145,75,.24);background:rgba(13,12,22,.32);color:#ffe2ce; }
+.theme-admin-toggle { width:100%;white-space:normal; }
+.theme-admin-toggle.halloween-restore-btn { background:linear-gradient(115deg,#56516b,#343449); }
+.theme-admin-footnote { margin:10px 0 0;line-height:1.5;font-size:10px; }
+@media(min-width:620px){html[data-theme="halloween"] .halloween-theme-banner{margin-left:24px;margin-right:24px}.theme-admin-panel{padding:18px}}

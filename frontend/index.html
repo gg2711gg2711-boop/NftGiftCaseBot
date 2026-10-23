@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261023-halloween1" />
+  <link rel="stylesheet" href="./styles.css?v=20261023-collectors2" />
 </head>
 <body>
   <div class="app-shell">
@@ -151,9 +151,54 @@
       </section>
 
       <section id="inventory-view" class="view">
-        <div class="page-title-row"><div><p class="eyebrow">КОЛЛЕКЦИЯ</p><h1>Мои предметы</h1></div><span class="count-badge" id="inventory-count">0</span></div>
+        <div class="page-title-row"><div><p class="eyebrow">КОЛЛЕКЦИЯ</p><h1>Мои предметы</h1></div><div class="inventory-header-actions"><span class="count-badge" id="inventory-count">0</span><button id="sell-all-btn" class="secondary-btn" disabled>Продать всё</button></div></div>
+        <div class="collection-quick-actions" aria-label="Коллекционные функции">
+          <button class="collection-action" data-jump="market"><span>💱</span><strong>Рынок</strong><small>Торговля</small></button>
+          <button class="collection-action" data-jump="craft"><span>🛠</span><strong>Крафт</strong><small>Новые фоны</small></button>
+          <button class="collection-action" data-jump="showcase"><span>🖼️</span><strong>Витрина</strong><small>Профиль</small></button>
+          <button class="collection-action" data-jump="collections"><span>🎃</span><strong>Коллекции</strong><small>Сезоны</small></button>
+        </div>
         <div id="inventory-grid" class="inventory-grid"></div>
         <div id="inventory-empty" class="empty-state"><div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="M4.5 7.7 12 12l7.5-4.3"/></svg></div><h3>Пока пусто</h3><p>Откройте кейс, чтобы получить первый предмет.</p><button class="primary-btn" data-jump="cases">Перейти к кейсам</button></div>
+      </section>
+
+      <section id="market-view" class="view">
+        <div class="page-title-row"><button class="back-btn" data-back="inventory" aria-label="Назад">‹</button><div><p class="eyebrow">PLAYER MARKET</p><h1>Рынок подарков</h1></div><button id="market-refresh" class="secondary-btn">Обновить</button></div>
+        <div class="panel market-intro"><strong>💱 Торговля между игроками</strong><p>Выставляй собственные предметы и покупай чужие за внутренние кредиты GiftCase ★. Комиссия продавца — 5%. Это внутриигровой рынок, не перевод настоящих Telegram Stars.</p></div>
+        <div class="section-heading section-heading-spaced"><h2>Доступные лоты</h2><span class="muted-note">До 100 объявлений</span></div>
+        <div id="market-grid" class="market-grid"></div>
+        <div id="market-empty" class="empty-state hidden"><div class="empty-icon">💱</div><h3>Пока нет лотов</h3><p>Выставь первый предмет из своего инвентаря.</p><button class="primary-btn" data-jump="inventory">Мои предметы</button></div>
+        <div class="section-heading section-heading-spaced"><h2>Мои объявления</h2></div><div id="market-my-listings" class="admin-list"></div>
+      </section>
+
+      <section id="craft-view" class="view">
+        <div class="page-title-row"><button class="back-btn" data-back="inventory" aria-label="Назад">‹</button><div><p class="eyebrow">GIFT FORGE</p><h1>Крафт подарков</h1></div></div>
+        <div class="panel craft-intro"><strong>🛠 Объединяй от 2 до 4 одинаковых подарков</strong><p>Исходные предметы будут использованы, а ты получишь один экземпляр того же типа с новым фоном и уникальным номером. Чем больше предметов в крафте, тем выше шанс редкого фона.</p><div class="craft-rarity-legend"><span><i class="rarity-dot rarity-default"></i>Обычный</span><span><i class="rarity-dot rarity-blue"></i>Синий</span><span><i class="rarity-dot rarity-purple"></i>Фиолетовый</span><span><i class="rarity-dot rarity-gold"></i>Золотой</span><span><i class="rarity-dot rarity-black"></i>Чёрный — самый редкий</span></div></div>
+        <div class="craft-odds-grid"><div><small>2 предмета</small><strong>0,5% чёрный</strong></div><div><small>3 предмета</small><strong>1,5% чёрный</strong></div><div><small>4 предмета</small><strong>3% чёрный</strong></div></div>
+        <div class="section-heading section-heading-spaced"><h2>Выбери материалы</h2><span id="craft-selection-count" class="count-badge">0 / 4</span></div>
+        <div id="craft-material-grid" class="craft-material-grid"></div>
+        <button id="craft-run-btn" class="primary-btn wide-btn" disabled>Выбрать 2–4 подарка</button>
+        <p class="muted-note">Чёрный фон имеет наименьшую вероятность во всех режимах. Результат определяется сервером.</p>
+      </section>
+
+      <section id="showcase-view" class="view">
+        <div class="page-title-row"><button class="back-btn" data-back="inventory" aria-label="Назад">‹</button><div><p class="eyebrow">PUBLIC PROFILE</p><h1>Витрина подарков</h1></div></div>
+        <div id="showcase-public-profile" class="showcase-profile"></div>
+        <div id="showcase-editor" class="panel showcase-editor hidden">
+          <h2>Настроить витрину</h2><p class="muted-note">Закрепи до 6 предметов, выбери разблокированный титул и рамку. Остальные игроки увидят только выбранные подарки.</p>
+          <label>Титул профиля<select id="showcase-title-select"><option value="Коллекционер">Коллекционер</option></select></label>
+          <label>Рамка профиля<select id="showcase-frame-select"><option value="default">Стандартная</option></select></label>
+          <div id="showcase-owned-grid" class="showcase-owned-grid"></div>
+          <button id="showcase-save-btn" class="primary-btn wide-btn">Сохранить витрину</button>
+        </div>
+        <div id="showcase-empty" class="empty-state hidden"><div class="empty-icon">🖼️</div><h3>Витрина пока пуста</h3><p>Игрок ещё не закрепил подарки в профиле.</p></div>
+      </section>
+
+      <section id="collections-view" class="view">
+        <div class="page-title-row"><button class="back-btn" data-back="inventory" aria-label="Назад">‹</button><div><p class="eyebrow">SEASONAL DROP</p><h1>Сезонные коллекции</h1></div><button id="collections-refresh" class="secondary-btn">Обновить</button></div>
+        <div class="panel seasonal-intro"><strong>🎃 Собери коллекцию — забери титул</strong><p>Собирай нужные предметы в срок события. За завершённую серию можно открыть уникальный титул и оформление профиля. Секретные предметы скрыты до получения.</p></div>
+        <div id="seasonal-collections-grid" class="seasonal-collections-grid"></div>
+        <div id="seasonal-collections-empty" class="empty-state hidden"><div class="empty-icon">🍂</div><h3>Сезоны пока не запущены</h3><p>Новые коллекции появятся здесь после запуска события.</p></div>
       </section>
 
       <section id="event-view" class="view">
@@ -242,6 +287,20 @@
           <div class="global-admin-divider"></div><h3 class="admin-subheading">Созданные предложения</h3><div id="admin-offers-list" class="admin-list muted-note">Предложения загрузятся после подключения базы.</div>
         </div>
 
+        <div class="panel admin-panel seasonal-admin-panel">
+          <h2>🎃 Сезонные коллекции</h2><p class="muted-note">Создавай тематические серии, указывай даты, выбирай обязательные предметы, секретную находку и титул с рамкой за завершение.</p>
+          <label>Название коллекции<input id="admin-season-title" maxlength="80" placeholder="Halloween: Проклятая коллекция" /></label>
+          <label>Описание<textarea id="admin-season-description" maxlength="240" rows="2" placeholder="Собери коллекцию до конца сезона"></textarea></label>
+          <label>Обложка коллекции<select id="admin-season-image"><option value="case-halloween.png">Halloween</option><option value="case-rich.png">Золото</option><option value="case-durov.png">Космос / Telegram</option><option value="case-daily.png">Daily</option><option value="gift-box.png">Подарочная коробка</option><option value="nft-swan.png">NFT Swan</option></select></label>
+          <div class="form-grid"><label>Начало<input id="admin-season-start" type="datetime-local" /></label><label>Окончание<input id="admin-season-end" type="datetime-local" /></label></div>
+          <label>Предметы коллекции (выбери минимум 2)<select id="admin-season-items" multiple size="6"></select></label>
+          <label>Секретный необязательный предмет<select id="admin-season-secret"><option value="">Нет секретного предмета</option></select></label>
+          <div class="form-grid"><label>Титул за набор<input id="admin-season-reward-title" maxlength="60" value="☠️ Cursed King" /></label><label>ID рамки<input id="admin-season-frame" maxlength="40" value="halloween-gold" /></label></div>
+          <label class="toggle-row"><span>Коллекция активна</span><input id="admin-season-active" type="checkbox" checked /></label>
+          <button id="admin-season-save" class="small-primary">Создать коллекцию</button>
+          <div class="global-admin-divider"></div><h3 class="admin-subheading">Созданные сезоны</h3><div id="admin-season-list" class="admin-list muted-note">Коллекции загрузятся после входа администратора.</div>
+        </div>
+
         <div class="panel admin-panel broadcast-admin-panel">
           <h2>📣 Рассылка игрокам через бота</h2>
           <p class="muted-note">Сообщение будет отправлено в личный чат каждому зарегистрированному игроку, который ещё может получать сообщения от бота. Telegram может не доставить сообщения тем, кто заблокировал бота. Рассылка идёт пакетами и её можно продолжить позже.</p>
@@ -276,6 +335,6 @@
 
   <script src="./config.js?v=20261023-offers-broadcasts1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261023-halloween1" defer></script>
+  <script src="./app.js?v=20261023-collectors2" defer></script>
 </body>
 </html>

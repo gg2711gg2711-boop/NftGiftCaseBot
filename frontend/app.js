@@ -10,7 +10,8 @@
     view: 'home', filter: 'all', search: '', cases: [], currentCase: null, quantity: 1,
     balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
     adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
-    demoInventory: [], lastSpin: null, caseSort: false
+    demoInventory: [], lastSpin: null, caseSort: false,
+    marketListings: [], craftSelected: [], collections: [], showcase: null, showcaseTargetId: null
   };
   const mockItems = [
     { id: 'daily-teddy', title: 'Плюшевый мишка', image_url: 'teddy.png', kind: 'gift', value_stars: 5, weight: 52 },
@@ -153,6 +154,10 @@
     if (view === 'event') renderEvent();
     if (view === 'battles') loadBattles();
     if (view === 'shop') loadOffers().catch(err => { if (err.code === 'SUBSCRIPTION_REQUIRED') showMandatorySubscriptionModal(err.message); else console.warn('Shop refresh failed:', err.message); });
+    if (view === 'market') loadMarket();
+    if (view === 'craft') renderCraft();
+    if (view === 'showcase') loadShowcase(S.showcaseTargetId);
+    if (view === 'collections') loadCollections();
     if (view === 'admin') loadAdmin();
     if (tg?.BackButton) { view === 'home' ? tg.BackButton.hide() : tg.BackButton.show(); }
     if (requested === 'cases') { window.setTimeout(() => $('#case-grid')?.scrollIntoView({ behavior:'smooth', block:'start' }), 40); }
@@ -509,12 +514,15 @@
   }
 
   function saleValue(item) { return Math.max(1, Math.floor(Number(item?.value_stars || 0) * 0.7)); }
+  function backgroundClass(item) { const key=String(item?.background_key||'default'); return ['default','blue','purple','gold','black'].includes(key)?`gift-bg-${key}`:'gift-bg-default'; }
+  function backgroundLabel(key) { return ({default:'Обычный',blue:'Синий',purple:'Фиолетовый',gold:'Золотой',black:'Чёрный · самый редкий'})[String(key||'default')]||'Обычный'; }
   function renderInventory() {
-    const items = S.inventory || [];
+    const items = S.inventory || []; const owned=items.filter(item=>item.status==='owned');
     $('#inventory-count').textContent=String(items.length);
-    $('#inventory-grid').innerHTML=items.map(item=>`<article class="inventory-card"><span class="inventory-tag">${esc(itemKind(item))}</span><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><h3>${esc(item.title)}</h3><p>${esc(money(item.value_stars))} · ${esc(item.status==='withdraw_pending'?'На выводе':'В коллекции')}</p>${item.status==='owned'?`<div class="inventory-actions"><button class="small-primary" data-sell="${esc(item.inventory_id)}">Продать за ${saleValue(item)} кредитов</button><button class="secondary-btn" data-withdraw="${esc(item.inventory_id)}">Запросить вывод</button></div>`:`<button class="secondary-btn" disabled>В обработке</button>`}</article>`).join('');
+    const sellAll=$('#sell-all-btn');if(sellAll){sellAll.disabled=owned.length===0;sellAll.textContent=owned.length?`Продать всё (${owned.length})`:'Продать всё';}
+    $('#inventory-grid').innerHTML=items.map(item=>`<article class="inventory-card ${backgroundClass(item)}"><span class="inventory-tag">${esc(itemKind(item))}</span><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><h3>${esc(item.title)}</h3><p>${esc(money(item.value_stars))} · ${esc(item.status==='withdraw_pending'?'На выводе':'В коллекции')}</p><p class="item-traits"><span>${esc(backgroundLabel(item.background_key))}</span><b>#${esc(item.serial_number||'—')}</b></p>${item.status==='owned'?`<div class="inventory-actions"><button class="small-primary" data-sell="${esc(item.inventory_id)}">Продать за ${saleValue(item)} ★</button><button class="secondary-btn" data-list-market="${esc(item.inventory_id)}">На рынок</button><button class="secondary-btn" data-withdraw="${esc(item.inventory_id)}">Запросить вывод</button></div>`:`<button class="secondary-btn" disabled>На обработке</button>`}</article>`).join('');
     $('#inventory-empty').classList.toggle('visible',items.length===0); $('#inventory-grid').classList.toggle('hidden',items.length===0);
-    $('#upgrade-inventory').innerHTML=items.filter(i=>i.status==='owned').slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся здесь после открытия кейса.</span>`;
+    $('#upgrade-inventory').innerHTML=owned.slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся здесь после открытия кейса.</span>`;
   }
   function showSellConfirm(inventoryId) {
     const item = (S.inventory || []).find(i => String(i.inventory_id) === String(inventoryId));
@@ -534,6 +542,127 @@
       closeModal(); toast(`Продано за ${Number(result.saleValue).toLocaleString('ru-RU')} кредитов`, 'success'); await refreshUserData();
     } catch(err) { closeModal(); toast(err.message, 'error', 5000); }
   }
+  function showSellAllConfirm() {
+    const items=(S.inventory||[]).filter(item=>item.status==='owned');
+    if(!items.length)return toast('Нет предметов в коллекции для продажи','error');
+    const estimate=items.reduce((sum,item)=>sum+saleValue(item),0);
+    openModal(`<h2 class="modal-title" id="modal-title">Продать все предметы?</h2><p class="modal-copy">Будут проданы <b>${items.length}</b> предметов из коллекции. Ориентировочное начисление — <b>${estimate.toLocaleString('ru-RU')} кредитов</b> (70% оценочной стоимости). Лоты на рынке и предметы на выводе не затрагиваются.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-sell-all>Продать всё</button></div>`);
+  }
+  async function sellAllInventory() {
+    const button=$('[data-confirm-sell-all]');if(button)button.disabled=true;
+    if(MOCK){const items=(S.inventory||[]).filter(item=>item.status==='owned');const amount=items.reduce((sum,item)=>sum+saleValue(item),0);S.inventory=S.inventory.filter(item=>item.status!=='owned');S.balance+=amount;if(S.user)S.user.balance=S.balance;closeModal();renderBalance();renderInventory();toast(`DEMO: продано ${items.length}, начислено ${amount} кредитов`,'success');return;}
+    try{const result=await api('/api/inventory/sell-all',{method:'POST',body:{}});closeModal();toast(result.message||`Продано ${result.soldCount} предметов`,'success',5000);await refreshUserData();}
+    catch(err){toast(err.message,'error',5000);}finally{if(button)button.disabled=false;}
+  }
+  function showMarketListingModal(inventoryId) {
+    const item=(S.inventory||[]).find(row=>String(row.inventory_id)===String(inventoryId));
+    if(!item||item.status!=='owned')return toast('Этот предмет нельзя выставить на рынок','error');
+    const suggested=Math.max(1,Math.floor(Number(item.value_stars||1)));
+    openModal(`<h2 class="modal-title" id="modal-title">Выставить на рынок</h2><div class="market-modal-item"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><div><strong>${esc(item.title)}</strong><small>${esc(backgroundLabel(item.background_key))} · #${esc(item.serial_number||'—')}</small></div></div><label>Цена во внутренних кредитах ★<input id="market-listing-price" type="number" min="1" max="1000000000" value="${suggested}"/></label><p class="muted-note">Комиссия 5% удерживается с продажи. Подарок будет временно заблокирован в инвентаре, пока лот активен.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-market-list="${esc(inventoryId)}">Выставить лот</button></div>`);
+  }
+  async function createMarketListing(inventoryId) {
+    const price=Number($('#market-listing-price')?.value); if(!Number.isSafeInteger(price)||price<1||price>1000000000)return toast('Укажи цену от 1 до 1 000 000 000 кредитов','error');
+    try{const result=await api('/api/market/listings',{method:'POST',body:{inventoryId,priceCredits:price}});closeModal();toast(result.message,'success');await refreshUserData();await loadMarket();}
+    catch(err){toast(err.message,'error',5000);}
+  }
+  async function loadMarket() {
+    if(MOCK){S.marketListings=[];renderMarket();return;}
+    try{const data=await api('/api/market/listings');S.marketListings=data.listings||[];S.myMarketListings=data.myListings||[];renderMarket();}
+    catch(err){if(err.code==='SUBSCRIPTION_REQUIRED')showMandatorySubscriptionModal(err.message);else toast(`Не удалось загрузить рынок: ${err.message}`,'error',5000);}
+  }
+  function renderMarket() {
+    const listings=S.marketListings||[];
+    $('#market-grid').innerHTML=listings.map(item=>`<article class="market-card ${backgroundClass(item)}"><div class="market-item-art"><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span class="market-serial">#${esc(item.serial_number||'—')}</span></div><div class="market-card-body"><span class="inventory-tag">${esc(itemKind(item))}</span><h3>${esc(item.title)}</h3><p class="item-traits">${esc(backgroundLabel(item.background_key))}</p><p class="market-seller">Продавец: ${esc(item.seller_username?'@'+item.seller_username:item.seller_first_name||'Игрок')}</p><div class="market-price-row"><strong>${Number(item.price_credits).toLocaleString('ru-RU')} ★</strong>${String(item.seller_id)===String(S.user?.telegram_id)?'<button class="secondary-btn" data-cancel-market="'+esc(item.id)+'">Снять</button>':'<button class="small-primary" data-buy-market="'+esc(item.id)+'">Купить</button>'}</div><button class="text-btn market-profile-link" data-view-showcase="${esc(item.seller_id)}">Витрина игрока →</button></div></article>`).join('');
+    $('#market-empty').classList.toggle('hidden',listings.length>0);
+    const mine=S.myMarketListings||[];
+    $('#market-my-listings').innerHTML=mine.length?mine.map(item=>`<div class="admin-order"><span><b>${esc(item.title)}</b><br/><small>${Number(item.price_credits).toLocaleString('ru-RU')} ★ · ${esc(item.status==='processing'?'Покупается':'Активен')}</small></span>${item.status==='active'?`<button class="secondary-btn" data-cancel-market="${esc(item.id)}">Снять лот</button>`:'<span class="muted-note">В обработке</span>'}</div>`).join(''):'<p class="muted-note">У тебя пока нет активных объявлений.</p>';
+  }
+  function confirmMarketBuy(listingId) {
+    const item=(S.marketListings||[]).find(row=>String(row.id)===String(listingId));if(!item)return toast('Лот уже недоступен','error');
+    if(String(item.seller_id)===String(S.user?.telegram_id))return toast('Нельзя купить собственный лот','error');
+    openModal(`<h2 class="modal-title" id="modal-title">Подтвердить покупку?</h2><p class="modal-copy">Ты покупаешь <b>${esc(item.title)}</b>, фон «${esc(backgroundLabel(item.background_key))}», номер #${esc(item.serial_number||'—')} за <b>${Number(item.price_credits).toLocaleString('ru-RU')} кредитов</b>. Передача будет выполнена сервером после списания баланса.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-market-buy="${esc(listingId)}">Купить</button></div>`);
+  }
+  async function buyMarketListing(listingId) {
+    try{const result=await api(`/api/market/listings/${encodeURIComponent(listingId)}/buy`,{method:'POST',body:{}});closeModal();toast(result.message,'success',5000);await refreshUserData();await loadMarket();}
+    catch(err){toast(err.message,'error',5000);await loadMarket();}
+  }
+  async function cancelMarketListing(listingId) {
+    try{const result=await api(`/api/market/listings/${encodeURIComponent(listingId)}/cancel`,{method:'POST',body:{}});toast(result.message,'success');await refreshUserData();await loadMarket();}
+    catch(err){toast(err.message,'error',5000);await loadMarket();}
+  }
+  function renderCraft() {
+    const available=(S.inventory||[]).filter(item=>item.status==='owned');
+    const validIds=new Set(available.map(item=>String(item.inventory_id)));
+    S.craftSelected=(S.craftSelected||[]).filter(id=>validIds.has(String(id)));
+    const selectedIds=new Set(S.craftSelected);const selected=available.filter(item=>selectedIds.has(String(item.inventory_id)));
+    $('#craft-selection-count').textContent=`${selected.length} / 4`;
+    const button=$('#craft-run-btn');if(button){button.disabled=selected.length<2||selected.length>4||new Set(selected.map(item=>item.item_id)).size>1;button.textContent=selected.length<2?'Выбери минимум 2 подарка':selected.length>4?'Можно выбрать максимум 4':`Создать новый вариант (${selected.length})`;}
+    $('#craft-material-grid').innerHTML=available.map(item=>`<label class="craft-material-card ${backgroundClass(item)} ${selectedIds.has(String(item.inventory_id))?'selected':''}"><input type="checkbox" data-craft-select value="${esc(item.inventory_id)}" ${selectedIds.has(String(item.inventory_id))?'checked':''}/><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(backgroundLabel(item.background_key))} · #${esc(item.serial_number||'—')}</small></label>`).join('')||'<p class="muted-note">Нет предметов для крафта. Открой кейс или купи лот на рынке.</p>';
+  }
+  function toggleCraftSelection(inventoryId, checked) {
+    const item=(S.inventory||[]).find(row=>String(row.inventory_id)===String(inventoryId));if(!item)return;
+    let selected=(S.craftSelected||[]).slice();
+    if(checked){
+      if(selected.length>=4){toast('Можно выбрать не больше 4 предметов','error');return renderCraft();}
+      const first=(S.inventory||[]).find(row=>String(row.inventory_id)===String(selected[0]));
+      if(first&&first.item_id!==item.item_id){toast('Для одного крафта выбирай только одинаковые подарки','error');return renderCraft();}
+      if(!selected.includes(String(inventoryId)))selected.push(String(inventoryId));
+    } else selected=selected.filter(id=>id!==String(inventoryId));
+    S.craftSelected=selected;renderCraft();
+  }
+  async function performCraft() {
+    const ids=S.craftSelected||[];if(ids.length<2||ids.length>4)return toast('Выбери от 2 до 4 одинаковых предметов','error');
+    if(MOCK)return toast('Крафт работает только с подключённым сервером и сохранённым инвентарём','error',5000);
+    const button=$('#craft-run-btn');button.disabled=true;
+    try{const result=await api('/api/craft',{method:'POST',body:{inventoryIds:ids}});S.craftSelected=[];toast(result.message||'Крафт завершён','success',5500);await refreshUserData();renderCraft();}
+    catch(err){toast(err.message,'error',5500);}finally{button.disabled=false;renderCraft();}
+  }
+  async function loadCollections() {
+    if(MOCK){S.collections=[];renderCollections();return;}
+    try{const result=await api('/api/collections');S.collections=result.collections||[];renderCollections();}
+    catch(err){if(err.code==='SUBSCRIPTION_REQUIRED')showMandatorySubscriptionModal(err.message);else toast(`Не удалось загрузить коллекции: ${err.message}`,'error',5000);}
+  }
+  function renderCollections() {
+    const list=S.collections||[];
+    $('#seasonal-collections-grid').innerHTML=list.map(c=>`<article class="seasonal-card"><div class="seasonal-art ${String(c.id).includes('halloween')?'seasonal-halloween':''}"><img src="${imageSrc(c.image_url)}" alt="${esc(c.title)}"/></div><div class="seasonal-card-body"><span class="eyebrow">${c.is_live?'СЕЗОН АКТИВЕН':'СКОРО'}</span><h2>${esc(c.title)}</h2><p>${esc(c.description||'Собери все предметы серии до окончания сезона.')}</p><div class="season-progress"><div><span>Прогресс коллекции</span><strong>${Number(c.progress||0)} / ${Number(c.required_count||0)}</strong></div><div class="season-progress-track"><span style="width:${c.required_count?Math.min(100,100*Number(c.progress||0)/Number(c.required_count)):0}%"></span></div></div><div class="seasonal-items-mini">${(c.items||[]).map(item=>`<div class="seasonal-mini-item ${item.owned?'owned':''} ${item.hidden?'secret':''}"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span>${esc(item.title)}</span>${item.is_required?'<b>•</b>':''}</div>`).join('')}</div><p class="muted-note">До: ${esc(new Date(c.ends_at).toLocaleString('ru-RU',{dateStyle:'medium',timeStyle:'short'}))}</p>${c.claimed?`<div class="season-reward-unlocked">✅ Награда получена: ${esc(c.reward_title)}</div>`:c.can_claim?`<button class="primary-btn wide-btn" data-claim-collection="${esc(c.id)}">Забрать титул и рамку</button>`:`<div class="muted-note">Награда: ${esc(c.reward_title)} · завершите обязательную серию</div>`}</div></article>`).join('');
+    $('#seasonal-collections-empty').classList.toggle('hidden',list.length>0);
+  }
+  async function claimSeasonCollection(collectionId) {
+    try{const result=await api(`/api/collections/${encodeURIComponent(collectionId)}/claim`,{method:'POST',body:{}});toast(result.message||'Награда разблокирована','success',5500);await loadCollections();await loadShowcase(null);}
+    catch(err){toast(err.message,'error',5000);}
+  }
+  async function loadShowcase(targetId=null) {
+    const wanted=targetId===null||targetId===undefined||String(targetId)===''?null:String(targetId);
+    try{
+      const result=await api(wanted?`/api/showcase/${encodeURIComponent(wanted)}`:'/api/showcase');
+      S.showcase=result;S.showcaseTargetId=wanted;renderShowcase();
+    }catch(err){$('#showcase-public-profile').innerHTML=`<div class="panel"><p class="muted-note">Не удалось открыть витрину: ${esc(err.message)}</p></div>`;$('#showcase-editor').classList.add('hidden');$('#showcase-empty').classList.add('hidden');}
+  }
+  function renderShowcase() {
+    const data=S.showcase;if(!data)return;
+    const mine=Boolean(data.isMine);const profile=data.profile||{};const showcase=data.showcase||{showcase_title:'Коллекционер',frame_key:'default'};
+    $('#showcase-public-profile').innerHTML=`<div class="showcase-hero frame-${esc(['default','halloween-gold'].includes(showcase.frame_key)?showcase.frame_key:'default')}"><div class="showcase-avatar">${esc(String(profile.first_name||'G').slice(0,1).toUpperCase())}</div><div class="showcase-owner"><h2>${esc(profile.first_name||'Игрок')} ${profile.username?`<small>@${esc(profile.username)}</small>`:''}</h2><span>${esc(showcase.showcase_title||'Коллекционер')}</span><small>GiftCase · Витрина коллекционера</small></div><span class="showcase-crown">♛</span></div>`;
+    $('#showcase-empty').classList.toggle('hidden',(data.items||[]).length>0);
+    $('#showcase-editor').classList.toggle('hidden',!mine);
+    const featured=data.items||[];
+    $('#showcase-public-profile').insertAdjacentHTML('beforeend',`<div class="section-heading section-heading-spaced"><h2>${mine?'Моя коллекция':'Коллекция игрока'}</h2><span class="count-badge">${featured.length} / 6</span></div><div class="showcase-featured-grid">${featured.map(item=>`<article class="showcase-item ${backgroundClass(item)}"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(backgroundLabel(item.background_key))} · #${esc(item.serial_number||'—')}</small></article>`).join('')}</div>`);
+    if(!mine)return;
+    const rewards=data.unlockedRewards||[];const titleSelect=$('#showcase-title-select');const frameSelect=$('#showcase-frame-select');
+    const oldTitle=showcase.showcase_title||'Коллекционер';const oldFrame=showcase.frame_key||'default';
+    titleSelect.innerHTML='<option value="Коллекционер">Коллекционер</option>'+rewards.map(r=>`<option value="${esc(r.reward_title)}">${esc(r.reward_title)}</option>`).join('');
+    frameSelect.innerHTML='<option value="default">Стандартная</option>'+rewards.map(r=>`<option value="${esc(r.reward_frame_key)}">${esc(r.reward_title)} · рамка</option>`).join('');
+    titleSelect.value=[...titleSelect.options].some(o=>o.value===oldTitle)?oldTitle:'Коллекционер';frameSelect.value=[...frameSelect.options].some(o=>o.value===oldFrame)?oldFrame:'default';
+    const available=data.availableItems||[];const featuredIds=new Set(featured.map(item=>String(item.inventory_id)));
+    $('#showcase-owned-grid').innerHTML=available.map(item=>`<label class="showcase-pick ${backgroundClass(item)}"><input type="checkbox" data-showcase-pick value="${esc(item.inventory_id)}" ${featuredIds.has(String(item.inventory_id))?'checked':''}/><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><small>${esc(backgroundLabel(item.background_key))} · #${esc(item.serial_number||'—')}</small></label>`).join('')||'<p class="muted-note">В инвентаре пока нет предметов.</p>';
+  }
+  async function saveShowcase() {
+    if(MOCK)return toast('Витрина требует подключённый сервер','error');
+    const inventoryIds=$$('[data-showcase-pick]:checked').map(el=>el.value);if(inventoryIds.length>6)return toast('Можно выбрать не больше 6 предметов','error');
+    try{const result=await api('/api/showcase',{method:'POST',body:{inventoryIds,title:$('#showcase-title-select').value,frameKey:$('#showcase-frame-select').value}});S.showcase=result;renderShowcase();toast(result.message||'Витрина сохранена','success');}
+    catch(err){toast(err.message,'error',5000);}
+  }
+  function openPlayerShowcase(telegramId) { S.showcaseTargetId=String(telegramId); setView('showcase'); }
+
   function showWithdrawConfirm(inventoryId) {
     openModal(`<h2 class="modal-title" id="modal-title">Запросить вывод?</h2><p class="modal-copy">Администратор получит заявку с ID, @username и выбранным предметом. Для подачи заявки у аккаунта Telegram должен быть установлен публичный @username. Фактическую передачу проверяет администратор.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-confirm-withdraw="${esc(inventoryId)}">Отправить заявку</button></div>`);
   }
@@ -680,6 +809,10 @@
     try {
       const [me, cases, inventory, wins, event] = await Promise.all([api('/api/me'),api('/api/cases'),api('/api/inventory'),api('/api/live-wins'),api('/api/event')]);
       S.user=me.user;S.balance=Number(me.user.balance||0);S.isAdmin=Boolean(me.isAdmin);S.cases=cases.cases;S.inventory=inventory.items;S.wins=wins.wins;S.eventData=event;await loadTheme();await loadGlobalDisplay();renderAll();fillAdminRewardSelector();
+      if(S.view==='craft')renderCraft();
+      if(S.view==='market')await loadMarket();
+      if(S.view==='collections')await loadCollections();
+      if(S.view==='showcase')await loadShowcase(S.showcaseTargetId);
     } catch(err) {
       console.warn(err);
       if (err.code === 'SUBSCRIPTION_REQUIRED') showMandatorySubscriptionModal(err.message);
@@ -877,6 +1010,40 @@
     finally{S.broadcastRunning=false;}
   }
 
+  function fillAdminSeasonSelectors() {
+    const itemSelect=$('#admin-season-items');const secretSelect=$('#admin-season-secret');if(!itemSelect||!secretSelect)return;
+    const items=S.adminOverview?.rewardCatalog||allTargetItems();
+    const previous=[...itemSelect.selectedOptions].map(o=>o.value);const oldSecret=secretSelect.value;
+    itemSelect.innerHTML=items.map(item=>`<option value="${esc(item.id)}">${esc(item.title)} · ${esc(money(item.value_stars))}</option>`).join('');
+    secretSelect.innerHTML='<option value="">Нет секретного предмета</option>'+items.map(item=>`<option value="${esc(item.id)}">${esc(item.title)}</option>`).join('');
+    previous.forEach(value=>{const option=[...itemSelect.options].find(o=>o.value===value);if(option)option.selected=true;});
+    if(oldSecret&&[...secretSelect.options].some(o=>o.value===oldSecret))secretSelect.value=oldSecret;
+  }
+  function resetSeasonEditor() {
+    if(!$('#admin-season-start').value)$('#admin-season-start').value=toLocalDateTimeInput(new Date().toISOString());
+    if(!$('#admin-season-end').value)$('#admin-season-end').value=toLocalDateTimeInput(new Date(Date.now()+14*86400000).toISOString());
+  }
+  function renderAdminSeasons(collections=[]) {
+    const host=$('#admin-season-list');if(!host)return;
+    host.innerHTML=collections.length?collections.map(c=>`<div class="admin-order"><span><b>${esc(c.title)}</b><br/><small>${Number(c.item_count||0)} предметов · ${esc(c.reward_title||'Коллекционер')} · до ${esc(new Date(c.ends_at).toLocaleDateString('ru-RU'))}</small></span><button class="secondary-btn" data-admin-season-toggle="${esc(c.id)}" data-active="${Number(c.active)?'1':'0'}">${Number(c.active)?'Отключить':'Включить'}</button></div>`).join(''):'<p class="muted-note">Сезонных коллекций пока нет.</p>';
+  }
+  async function adminSaveSeason() {
+    if(!S.isAdmin)return toast('Доступ запрещён','error');
+    if(MOCK)return toast('DEMO: сезон не сохраняется на сервере','error');
+    const startRaw=$('#admin-season-start').value;const endRaw=$('#admin-season-end').value;
+    const payload={title:$('#admin-season-title').value.trim(),description:$('#admin-season-description').value.trim(),imageUrl:$('#admin-season-image').value||'case-halloween.png',startsAt:startRaw?new Date(startRaw).toISOString():'',endsAt:endRaw?new Date(endRaw).toISOString():'',itemIds:[...$('#admin-season-items').selectedOptions].map(o=>o.value),secretItemId:$('#admin-season-secret').value,rewardTitle:$('#admin-season-reward-title').value.trim(),frameKey:$('#admin-season-frame').value.trim(),active:$('#admin-season-active').checked};
+    if(!payload.title||payload.itemIds.length<2)return toast('Укажи название и выбери минимум 2 предмета','error');
+    if(!payload.startsAt||!payload.endsAt||Date.parse(payload.startsAt)>=Date.parse(payload.endsAt))return toast('Проверь даты сезона','error');
+    const button=$('#admin-season-save');button.disabled=true;
+    try{const result=await api('/api/admin/collections',{method:'POST',body:payload});toast(result.message||'Сезон создан','success');$('#admin-season-title').value='';$('#admin-season-description').value='';await loadAdmin();}
+    catch(err){toast(err.message,'error',5500);}finally{button.disabled=false;}
+  }
+  async function toggleAdminSeason(collectionId, active) {
+    if(MOCK)return toast('DEMO: сезон не сохраняется на сервере','error');
+    try{const result=await api(`/api/admin/collections/${encodeURIComponent(collectionId)}/status`,{method:'PATCH',body:{active:!active}});toast(result.message,'success');await loadAdmin();}
+    catch(err){toast(err.message,'error',5000);}
+  }
+
   async function loadAdmin(preselectId = '') {
     if(!S.isAdmin) { toast('Доступ запрещён','error');return setView('home'); }
     applyTheme(S.themeMode);
@@ -888,13 +1055,13 @@
       $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('');
       if (preselectId) $('#admin-case-select').value=preselectId;
       fillAdminCase();
-      resetOfferEditor(); renderAdminOffers([]); renderAdminBroadcasts([]); renderAdminAudit([]);
+      resetOfferEditor(); renderAdminOffers([]); renderAdminBroadcasts([]); renderAdminAudit([]); fillAdminSeasonSelectors(); renderAdminSeasons([]); resetSeasonEditor();
       $('#admin-orders').textContent='DEMO: заказы не создаются. Изменения в демо не сохраняются в базе.';
       $('#admin-event-enabled').checked=true;$('#admin-event-type').value='battle_pass';$('#admin-event-title').value='Halloween Pass';
       return;
     }
     try {
-      const result=await api('/api/admin/overview'); S.adminOverview=result; fillEventRewardCatalog(); fillOfferRewardSelector(); renderAdminOffers(result.offers||[]); renderAdminBroadcasts(result.broadcasts||[]); renderAdminAudit(result.auditLogs||[]);
+      const result=await api('/api/admin/overview'); S.adminOverview=result; fillEventRewardCatalog(); fillOfferRewardSelector(); renderAdminOffers(result.offers||[]); renderAdminBroadcasts(result.broadcasts||[]); renderAdminAudit(result.auditLogs||[]); fillAdminSeasonSelectors(); renderAdminSeasons(result.collections||[]); resetSeasonEditor();
       const cases=result.cases||[];
       const selected = preselectId || $('#admin-case-select').value;
       $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}${Number(c.active)?'':' · выкл.'}</option>`).join('');
@@ -1122,7 +1289,7 @@
     if(target.matches('[data-close-modal]'))return closeModal();
     if(target.matches('[data-view]')) {sound();const next=target.dataset.view;if(next==='cases')S.filter='all';setView(next);return;}
     if(target.matches('[data-filter]')) {S.filter=target.dataset.filter;$$('[data-filter]').forEach(b=>b.classList.toggle('selected',b===target));renderHome();sound();return;}
-    if(target.matches('[data-jump]')) {setView(target.dataset.jump);return;}
+    if(target.matches('[data-jump]')) {if(target.dataset.jump==='showcase')S.showcaseTargetId=null;setView(target.dataset.jump);return;}
     if(target.matches('[data-open-case]')) {openCase(target.dataset.openCase);sound();return;}
     if(target.matches('[data-claim-case]')) {claimFree(target.dataset.claimCase);return;}
     if(target.matches('[data-qty]')) {selectQuantity(target.dataset.qty);sound();return;}
@@ -1149,6 +1316,18 @@
     if(target.matches('[data-withdraw]')) {showWithdrawConfirm(target.dataset.withdraw);return;}
     if(target.matches('[data-sell]')) {showSellConfirm(target.dataset.sell);return;}
     if(target.matches('[data-confirm-sell]')) {sellItem(target.dataset.confirmSell);return;}
+    if(target.id==='sell-all-btn') {showSellAllConfirm();return;}
+    if(target.matches('[data-confirm-sell-all]')) {sellAllInventory();return;}
+    if(target.matches('[data-list-market]')) {showMarketListingModal(target.dataset.listMarket);return;}
+    if(target.matches('[data-confirm-market-list]')) {createMarketListing(target.dataset.confirmMarketList);return;}
+    if(target.matches('[data-buy-market]')) {confirmMarketBuy(target.dataset.buyMarket);return;}
+    if(target.matches('[data-confirm-market-buy]')) {buyMarketListing(target.dataset.confirmMarketBuy);return;}
+    if(target.matches('[data-cancel-market]')) {cancelMarketListing(target.dataset.cancelMarket);return;}
+    if(target.id==='market-refresh'||target.id==='collections-refresh') {target.id==='market-refresh'?loadMarket():loadCollections();return;}
+    if(target.id==='craft-run-btn') {performCraft();return;}
+    if(target.matches('[data-claim-collection]')) {claimSeasonCollection(target.dataset.claimCollection);return;}
+    if(target.id==='showcase-save-btn') {saveShowcase();return;}
+    if(target.matches('[data-view-showcase]')) {openPlayerShowcase(target.dataset.viewShowcase);return;}
     if(target.matches('[data-confirm-withdraw]')) {withdraw(target.dataset.confirmWithdraw);return;}
     if(target.matches('[data-check-global-subscription]')) {checkGlobalSubscription();return;}
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
@@ -1158,6 +1337,7 @@
     if(target.matches('[data-admin-offer-edit]')) {fillOfferEditor(target.dataset.adminOfferEdit);return;}
     if(target.matches('[data-admin-offer-toggle]')) {toggleAdminOffer(target.dataset.adminOfferToggle,target.dataset.active);return;}
     if(target.id==='admin-broadcast-send') {confirmBroadcast();return;} if(target.id==='admin-broadcast-confirm') {startBroadcast();return;}
+    if(target.id==='admin-season-save') {adminSaveSeason();return;} if(target.matches('[data-admin-season-toggle]')) {toggleAdminSeason(target.dataset.adminSeasonToggle,target.dataset.active==='1');return;}
     if(target.matches('[data-admin-broadcast-resume]')) {runBroadcast(target.dataset.adminBroadcastResume);return;}
     if(target.matches('[data-buy-offer]')) {showOfferPurchaseConfirm(target.dataset.buyOffer);return;}
     if(target.matches('[data-confirm-offer]')) {purchaseOffer(target.dataset.confirmOffer);return;}
@@ -1181,6 +1361,7 @@
   }
 
   async function onInput(event) {
+    if(event.type==='change'&&event.target.matches('[data-craft-select]')){toggleCraftSelection(event.target.value,event.target.checked);return;}
     if(event.target.id==='search-input'){S.search=event.target.value;renderHome();}
     if(event.target.id==='bet-range'){S.upgradeBet=Number(event.target.value);updateUpgradeChance();}
     if(event.target.id==='admin-case-select')fillAdminCase();

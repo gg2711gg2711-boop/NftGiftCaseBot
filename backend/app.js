@@ -37,6 +37,7 @@ function adminActionLabel(req) {
   if (path.includes('/quests')) return 'Редактор квестов';
   if (path.includes('/global-display')) return 'Глобальное сообщение / таймер';
   if (path.includes('/theme')) return 'Оформление приложения';
+  if (path.includes('/collections')) return 'Сезонные коллекции';
   return 'Административное действие';
 }
 function normalizeImageUrl(value) {
@@ -205,9 +206,46 @@ async function getDrop(db, caseId) {
   return { caseRow, drop };
 }
 
+async function nextItemSerial(db, itemId) {
+  const result = await db.prepare(`INSERT INTO item_serial_counters(item_id,next_serial) VALUES(?,1)
+    ON CONFLICT(item_id) DO UPDATE SET next_serial=item_serial_counters.next_serial+1 RETURNING next_serial`).bind(String(itemId)).all();
+  const row = result?.results?.[0];
+  if (!row || !Number.isSafeInteger(Number(row.next_serial))) throw new Error('Не удалось выдать номер предмета');
+  return Number(row.next_serial);
+}
+
+async function ensureInventorySerial(db, inventoryId, itemId) {
+  try {
+    const current = await dbFirst(db, 'SELECT serial_number FROM inventory WHERE id=?', inventoryId);
+    if (current?.serial_number !== null && current?.serial_number !== undefined) return Number(current.serial_number);
+    const serial = await nextItemSerial(db, itemId);
+    await dbRun(db, 'UPDATE inventory SET serial_number=? WHERE id=? AND serial_number IS NULL', serial, inventoryId);
+    const saved = await dbFirst(db, 'SELECT serial_number FROM inventory WHERE id=?', inventoryId);
+    return Number(saved?.serial_number ?? serial);
+  } catch (err) {
+    // Keep older installations usable until migration 0008 has been applied.
+    console.warn('Inventory serial assignment skipped:', err?.message || err);
+    return null;
+  }
+}
+
+function rollCraftBackground(inputCount) {
+  // Weights out of 10,000. Black is always the rarest background; more inputs improve its odds.
+  const tables = {
+    2: [{ key:'default', weight:6400 },{ key:'blue', weight:2300 },{ key:'purple', weight:1000 },{ key:'gold', weight:250 },{ key:'black', weight:50 }],
+    3: [{ key:'default', weight:5400 },{ key:'blue', weight:2400 },{ key:'purple', weight:1500 },{ key:'gold', weight:550 },{ key:'black', weight:150 }],
+    4: [{ key:'default', weight:4000 },{ key:'blue', weight:2700 },{ key:'purple', weight:2200 },{ key:'gold', weight:800 },{ key:'black', weight:300 }]
+  };
+  const choices = tables[inputCount] || tables[2];
+  let roll = secureInt(10000);
+  for (const choice of choices) { roll -= choice.weight; if (roll < 0) return choice.key; }
+  return 'default';
+}
+
 async function awardDrop(db, telegramId, item, source = 'case') {
   const inventoryId = id();
   await dbRun(db, 'INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,?,\'owned\')', inventoryId, telegramId, item.id, source);
+  await ensureInventorySerial(db, inventoryId, item.id);
   await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+1 WHERE id=?', item.id);
   await dbRun(db, 'INSERT INTO live_wins(telegram_id,username,item_title,image_url,value_stars) SELECT ?,COALESCE(username,\'Player\'),?,?,? FROM users WHERE telegram_id=?', telegramId, item.title, item.image_url, item.value_stars, telegramId);
   if (source !== 'upgrade' && source !== 'battle_pass' && source !== 'advent' && source !== 'admin') {
@@ -623,22 +661,244 @@ export function createApp(envProvider = () => ({})) {
     const item = await dbFirst(db, `SELECT inv.id,inv.status,ci.title,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=? AND inv.telegram_id=?`, inventoryId, userId);
     if (!item || item.status !== 'owned') return fail(res, 409, 'Предмет не найден, уже продан или отправлен на вывод');
     const saleValue = Math.max(1, Math.floor(Number(item.value_stars || 0) * 0.7));
-    const update = await dbRun(db, `UPDATE inventory SET status='sold' WHERE id=? AND telegram_id=? AND status='owned'`, inventoryId, userId);
-    if ((update.meta?.changes || 0) === 0) return fail(res, 409, 'Предмет уже обрабатывается или продан');
-    await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', saleValue, userId);
+    const saleBatchId = id();
+    // D1 batch is transactional; the unique sale id prevents duplicate credits on retries.
+    const results = await db.batch([
+      db.prepare(`UPDATE inventory SET status='sold',sale_batch_id=? WHERE id=? AND telegram_id=? AND status='owned'`).bind(saleBatchId, inventoryId, userId),
+      db.prepare(`UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND EXISTS(SELECT 1 FROM inventory WHERE id=? AND telegram_id=? AND status='sold' AND sale_batch_id=?)`).bind(saleValue, userId, inventoryId, userId, saleBatchId),
+      db.prepare(`DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id=? AND EXISTS(SELECT 1 FROM inventory WHERE id=? AND sale_batch_id=?)`).bind(userId, inventoryId, inventoryId, saleBatchId)
+    ]);
+    if (Number(results?.[0]?.meta?.changes || 0) === 0) return fail(res, 409, 'Предмет уже обрабатывается или продан');
     const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId);
     return json(res, 200, { ok:true, saleValue, balance:Number(user?.balance || 0), message:`Предмет продан за ${saleValue} кредитов` });
+  });
+
+  app.post('/api/inventory/sell-all', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id); const batchId = id();
+    try {
+      // A D1 batch is executed transactionally and in order. Only items still marked owned are included;
+      // active marketplace listings and withdrawal requests are intentionally excluded.
+      const result = await db.batch([
+        db.prepare(`UPDATE inventory SET status='sold',sale_batch_id=? WHERE telegram_id=? AND status='owned'`).bind(batchId, userId),
+        db.prepare(`UPDATE users SET balance=balance+COALESCE((SELECT SUM(MAX(1,CAST(ci.value_stars*0.7 AS INTEGER)))
+          FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.sale_batch_id=?),0),updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`).bind(userId, batchId, userId),
+        db.prepare(`DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id IN (SELECT id FROM inventory WHERE telegram_id=? AND sale_batch_id=?)`).bind(userId, userId, batchId)
+      ]);
+      const soldCount = Number(result?.[0]?.meta?.changes || 0);
+      if (soldCount < 1) return fail(res, 409, 'Нет предметов в коллекции для продажи. Предметы на рынке и на выводе не затрагиваются.');
+      const payout = await dbFirst(db, `SELECT COALESCE(SUM(MAX(1,CAST(ci.value_stars*0.7 AS INTEGER))),0) AS amount
+        FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.sale_batch_id=?`, userId, batchId);
+      const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId);
+      return json(res, 200, {ok:true, soldCount, saleValue:Number(payout?.amount||0), balance:Number(user?.balance||0), message:`Продано предметов: ${soldCount}. Начислено ${Number(payout?.amount||0)} кредитов.`});
+    } catch (err) {
+      console.error('Sell-all failed:', err?.message || err);
+      return fail(res, 500, 'Не удалось продать предметы. Попробуй обновить инвентарь и повторить.');
+    }
+  });
+
+  app.get('/api/inventory', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id);
+    const missingSerials = await dbAll(db, `SELECT inv.id,inv.item_id FROM inventory inv WHERE inv.telegram_id=? AND inv.status IN ('owned','withdraw_pending') AND inv.serial_number IS NULL ORDER BY inv.created_at,inv.id LIMIT 400`, userId).catch(() => []);
+    for (const row of missingSerials) await ensureInventorySerial(db, row.id, row.item_id);
+    const items = await dbAll(db, `SELECT inv.id AS inventory_id,inv.status,inv.source,inv.created_at,inv.background_key,inv.serial_number,inv.collection_id,ci.id AS item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.status IN ('owned','withdraw_pending') ORDER BY inv.created_at DESC LIMIT 400`, userId);
+    return json(res, 200, { ok: true, items });
+  });
+
+  // Public marketplace uses GiftCase's internal credits only; it never transfers Telegram Stars.
+  app.get('/api/market/listings', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id);
+    const listings = await dbAll(db, `SELECT ml.id,ml.inventory_id,ml.seller_id,ml.price_credits,ml.status,ml.listed_at,
+      u.username AS seller_username,u.first_name AS seller_first_name,
+      inv.item_id,inv.background_key,inv.serial_number,ci.title,ci.image_url,ci.kind,ci.value_stars
+      FROM market_listings ml JOIN inventory inv ON inv.id=ml.inventory_id JOIN case_items ci ON ci.id=inv.item_id
+      JOIN users u ON u.telegram_id=ml.seller_id WHERE ml.status='active' AND inv.status='listed'
+      ORDER BY ml.listed_at DESC LIMIT 100`);
+    const myListings = await dbAll(db, `SELECT ml.id,ml.inventory_id,ml.seller_id,ml.price_credits,ml.status,ml.listed_at,
+      inv.item_id,inv.background_key,inv.serial_number,ci.title,ci.image_url,ci.kind,ci.value_stars
+      FROM market_listings ml JOIN inventory inv ON inv.id=ml.inventory_id JOIN case_items ci ON ci.id=inv.item_id
+      WHERE ml.seller_id=? AND ml.status IN ('active','processing') ORDER BY ml.listed_at DESC LIMIT 100`, userId);
+    return json(res, 200, {ok:true, listings: listings.map(row=>({...row,isMine:String(row.seller_id)===userId})), myListings});
+  });
+
+  app.post('/api/market/listings', async (req, res) => {
+    const db=dbOf(req); const userId=String(req.user.telegram_id);
+    const inventoryId=String(req.body?.inventoryId||'').trim(); const price=adminInteger(req.body?.priceCredits,1,1000000000);
+    if(!inventoryId) return fail(res,400,'Выбери предмет из инвентаря');
+    if(price===null) return fail(res,400,'Цена должна быть от 1 до 1 000 000 000 внутренних кредитов');
+    const item=await dbFirst(db,`SELECT inv.id,inv.item_id,inv.status,ci.title FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=? AND inv.telegram_id=?`,inventoryId,userId);
+    if(!item||item.status!=='owned') return fail(res,409,'Этот предмет нельзя выставить: он уже продан, выставлен или находится на выводе');
+    const listingId=id();
+    const changed=await dbRun(db,`UPDATE inventory SET status='listed' WHERE id=? AND telegram_id=? AND status='owned'`,inventoryId,userId);
+    if((changed.meta?.changes||0)===0) return fail(res,409,'Предмет уже обрабатывается');
+    try {
+      await dbRun(db,`INSERT INTO market_listings(id,inventory_id,seller_id,price_credits,status,listed_at) VALUES(?,?,?,?, 'active', ?)`,listingId,inventoryId,userId,price,nowIso());
+      return json(res,200,{ok:true,listingId,priceCredits:price,message:`«${item.title}» выставлен за ${price} кредитов.`});
+    } catch(err) {
+      await dbRun(db,`UPDATE inventory SET status='owned' WHERE id=? AND telegram_id=? AND status='listed'`,inventoryId,userId).catch(()=>{});
+      if(String(err?.message||'').includes('UNIQUE')) return fail(res,409,'Этот предмет уже имеет активное объявление');
+      console.error('Market listing create failed:',err?.message||err); return fail(res,500,'Не удалось создать объявление');
+    }
+  });
+
+  app.post('/api/market/listings/:listingId/cancel', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id); const listingId=String(req.params.listingId||'');
+    const listing=await dbFirst(db,`SELECT id,inventory_id,seller_id,status FROM market_listings WHERE id=?`,listingId);
+    if(!listing||String(listing.seller_id)!==userId) return fail(res,404,'Объявление не найдено');
+    if(listing.status!=='active') return fail(res,409,'Это объявление уже нельзя отменить');
+    // First reserve the cancellation. A concurrent buyer can no longer move the listing to processing.
+    const changed=await dbRun(db,`UPDATE market_listings SET status='cancelled',completed_at=? WHERE id=? AND seller_id=? AND status='active'`,nowIso(),listingId,userId);
+    if((changed.meta?.changes||0)===0) return fail(res,409,'Объявление уже обрабатывается');
+    const restored=await dbRun(db,`UPDATE inventory SET status='owned' WHERE id=? AND telegram_id=? AND status='listed'`,listing.inventory_id,userId);
+    if((restored.meta?.changes||0)===0){
+      await dbRun(db,`UPDATE market_listings SET status='active',completed_at=NULL WHERE id=? AND seller_id=? AND status='cancelled'`,listingId,userId).catch(()=>{});
+      return fail(res,409,'Предмет уже обрабатывается или передан другому игроку');
+    }
+    return json(res,200,{ok:true,message:'Объявление отменено, подарок возвращён в инвентарь.'});
+  });
+
+  app.post('/api/market/listings/:listingId/buy', async (req,res)=>{
+    const db=dbOf(req); const buyerId=String(req.user.telegram_id); const listingId=String(req.params.listingId||'');
+    let listing=null; let reserved=false; let debited=false; let transferred=false; let sellerPaid=false; let committed=false;
+    try {
+      listing=await dbFirst(db,`SELECT ml.*,inv.item_id,inv.status AS inventory_status,ci.title FROM market_listings ml JOIN inventory inv ON inv.id=ml.inventory_id JOIN case_items ci ON ci.id=inv.item_id WHERE ml.id=?`,listingId);
+      if(!listing||listing.status!=='active'||listing.inventory_status!=='listed') return fail(res,404,'Лот уже продан или снят с рынка');
+      if(String(listing.seller_id)===buyerId) return fail(res,400,'Нельзя купить собственный лот');
+      const reserve=await dbRun(db,`UPDATE market_listings SET status='processing' WHERE id=? AND status='active'`,listingId);
+      if((reserve.meta?.changes||0)===0) return fail(res,409,'Другой игрок уже покупает этот лот');
+      reserved=true;
+      const price=Number(listing.price_credits); const debit=await dbRun(db,`UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?`,price,buyerId,price);
+      if((debit.meta?.changes||0)===0) { await dbRun(db,`UPDATE market_listings SET status='active' WHERE id=? AND status='processing'`,listingId); reserved=false; return fail(res,409,'Недостаточно внутренних кредитов ★'); }
+      debited=true;
+      const transfer=await dbRun(db,`UPDATE inventory SET telegram_id=?,status='owned' WHERE id=? AND telegram_id=? AND status='listed'`,buyerId,listing.inventory_id,listing.seller_id);
+      if((transfer.meta?.changes||0)===0) throw new Error('Предмет больше не принадлежит продавцу');
+      transferred=true;
+      const fee=Math.floor(price*0.05); const sellerPayout=price-fee;
+      await dbRun(db,`UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`,sellerPayout,listing.seller_id); sellerPaid=true;
+      const finalized=await dbRun(db,`UPDATE market_listings SET status='sold',buyer_id=?,fee_credits=?,completed_at=? WHERE id=? AND status='processing'`,buyerId,fee,nowIso(),listingId);
+      if((finalized.meta?.changes||0)===0) throw new Error('Не удалось завершить объявление');
+      committed=true;
+      // Keep sold items out of the seller's showcase; failure here must not undo a completed trade.
+      await dbRun(db, 'DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id=?', String(listing.seller_id), listing.inventory_id).catch(()=>{});
+      return json(res,200,{ok:true,message:`Покупка успешна! «${listing.title}» теперь в твоём инвентаре.`,priceCredits:price,feeCredits:fee,sellerPayout});
+    } catch(err) {
+      if(!committed && listing) {
+        const price=Number(listing.price_credits||0); const fee=Math.floor(price*0.05);
+        if(sellerPaid) await dbRun(db,`UPDATE users SET balance=MAX(0,balance-?),updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`,price-fee,listing.seller_id).catch(()=>{});
+        if(transferred) await dbRun(db,`UPDATE inventory SET telegram_id=?,status='listed' WHERE id=? AND telegram_id=? AND status='owned'`,listing.seller_id,listing.inventory_id,buyerId).catch(()=>{});
+        if(debited) await dbRun(db,`UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?`,price,buyerId).catch(()=>{});
+        if(reserved) await dbRun(db,`UPDATE market_listings SET status='active' WHERE id=? AND status='processing'`,listingId).catch(()=>{});
+      }
+      console.error('Market purchase failed:',err?.message||err); return fail(res,500,'Не удалось завершить сделку. Баланс и предмет проверены; попробуй ещё раз.');
+    }
+  });
+
+  app.post('/api/craft', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id); const raw=req.body?.inventoryIds;
+    if(!Array.isArray(raw)||raw.length<2||raw.length>4) return fail(res,400,'Для крафта нужно выбрать от 2 до 4 одинаковых подарков');
+    const inventoryIds=[...new Set(raw.map(v=>String(v||'').trim()).filter(Boolean))];
+    if(inventoryIds.length!==raw.length) return fail(res,400,'Проверь список выбранных предметов');
+    const placeholders=inventoryIds.map(()=>'?').join(',');
+    const materials=await dbAll(db,`SELECT inv.id,inv.item_id,inv.status,inv.background_key,inv.serial_number,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.status='owned' AND inv.id IN (${placeholders})`,userId,...inventoryIds);
+    if(materials.length!==inventoryIds.length) return fail(res,409,'Некоторые предметы уже проданы, выставлены на рынок или изменились');
+    const itemId=materials[0].item_id;
+    if(materials.some(row=>row.item_id!==itemId)) return fail(res,400,'Для крафта можно использовать только подарки одного типа');
+    let resultInventoryId=null; let reservationCreated=false; let serial=null; const craftBatchId=id(); const background=rollCraftBackground(materials.length);
+    try {
+      const reserve=await dbRun(db,`UPDATE inventory SET status='consumed',craft_batch_id=? WHERE telegram_id=? AND status='owned' AND id IN (${placeholders})`,craftBatchId,userId,...inventoryIds);
+      reservationCreated=Number(reserve.meta?.changes||0)>0;
+      if(Number(reserve.meta?.changes||0)!==inventoryIds.length) throw new Error('Не удалось зарезервировать выбранные предметы: один из них уже обрабатывается');
+      serial=await nextItemSerial(db,itemId); resultInventoryId=id();
+      await dbRun(db,`INSERT INTO inventory(id,telegram_id,item_id,source,status,background_key,serial_number) VALUES(?,?,?,'craft','owned',?,?)`,resultInventoryId,userId,itemId,background,serial);
+      await dbRun(db,`INSERT INTO craft_log(id,telegram_id,item_id,input_inventory_ids,output_inventory_id,background_key,serial_number,created_at) VALUES(?,?,?,?,?,?,?,?)`,id(),userId,itemId,JSON.stringify(inventoryIds),resultInventoryId,background,serial,nowIso());
+      const output=await dbFirst(db,`SELECT inv.id AS inventory_id,inv.background_key,inv.serial_number,ci.id AS item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=?`,resultInventoryId);
+      await dbRun(db,`DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id IN (${placeholders})`,userId,...inventoryIds);
+      await dbRun(db,`UPDATE inventory SET craft_batch_id=NULL WHERE telegram_id=? AND status='consumed' AND craft_batch_id=?`,userId,craftBatchId);
+      return json(res,200,{ok:true,item:output,background,serialNumber:serial,message:`Крафт завершён! Получен «${output.title}» #${serial} с фоном «${background}».`});
+    } catch(err) {
+      if(resultInventoryId) await dbRun(db,'DELETE FROM craft_log WHERE output_inventory_id=?',resultInventoryId).catch(()=>{});
+      if(resultInventoryId) await dbRun(db,'DELETE FROM inventory WHERE id=?',resultInventoryId).catch(()=>{});
+      if(reservationCreated) await dbRun(db,`UPDATE inventory SET status='owned',craft_batch_id=NULL WHERE telegram_id=? AND status='consumed' AND craft_batch_id=?`,userId,craftBatchId).catch(()=>{});
+      console.error('Craft failed:',err?.message||err); return fail(res,500,err?.message||'Не удалось завершить крафт');
+    }
+  });
+
+  app.get('/api/collections', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id); const now=nowIso();
+    const collections=await dbAll(db,`SELECT * FROM seasonal_collections WHERE active=1 AND ends_at>? ORDER BY starts_at,title`,now);
+    const data=[];
+    for(const collection of collections){
+      const rows=await dbAll(db,`SELECT sci.item_id,sci.is_secret,sci.is_required,ci.title,ci.image_url,ci.kind,ci.value_stars,
+        (SELECT COUNT(*) FROM inventory inv WHERE inv.telegram_id=? AND inv.item_id=sci.item_id AND inv.status IN ('owned','listed')) AS owned_count
+        FROM seasonal_collection_items sci JOIN case_items ci ON ci.id=sci.item_id WHERE sci.collection_id=? ORDER BY sci.is_required DESC,sci.is_secret,ci.title`,userId,collection.id);
+      const required=rows.filter(x=>Number(x.is_required)===1); const completed=required.length>0&&required.every(x=>Number(x.owned_count)>0);
+      const reward=await dbFirst(db,'SELECT claimed_at FROM user_collection_rewards WHERE telegram_id=? AND collection_id=?',userId,collection.id);
+      data.push({...collection,items:rows.map(item=>{const hidden=Number(item.is_secret)===1&&Number(item.owned_count)===0;return {...item,title:hidden?'???':item.title,image_url:hidden?'gift-box.png':item.image_url,hidden,owned:Number(item.owned_count)>0};}),required_count:required.length,progress:required.filter(x=>Number(x.owned_count)>0).length,completed,claimed:Boolean(reward),is_live:String(collection.starts_at)<=now,can_claim:completed&&!reward&&String(collection.starts_at)<=now&&String(collection.ends_at)>now});
+    }
+    return json(res,200,{ok:true,collections:data});
+  });
+
+  app.post('/api/collections/:collectionId/claim', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id); const collectionId=String(req.params.collectionId||''); const now=nowIso();
+    const collection=await dbFirst(db,`SELECT * FROM seasonal_collections WHERE id=? AND active=1 AND starts_at<=? AND ends_at>?`,collectionId,now,now);
+    if(!collection) return fail(res,404,'Сезонная коллекция не активна');
+    const required=await dbAll(db,`SELECT item_id FROM seasonal_collection_items WHERE collection_id=? AND is_required=1`,collectionId);
+    if(!required.length) return fail(res,409,'В коллекции пока не настроены обязательные предметы');
+    for(const row of required){const owned=await dbFirst(db,`SELECT id FROM inventory WHERE telegram_id=? AND item_id=? AND status IN ('owned','listed') LIMIT 1`,userId,row.item_id);if(!owned)return fail(res,409,'Коллекция ещё не собрана полностью');}
+    const insert=await dbRun(db,`INSERT OR IGNORE INTO user_collection_rewards(telegram_id,collection_id,reward_title,reward_frame_key,claimed_at) VALUES(?,?,?,?,?)`,userId,collectionId,collection.reward_title,collection.reward_frame_key,now);
+    if((insert.meta?.changes||0)===0) return fail(res,409,'Награда за эту коллекцию уже получена');
+    return json(res,200,{ok:true,title:collection.reward_title,frameKey:collection.reward_frame_key,message:`Коллекция собрана! Получен титул «${collection.reward_title}» и рамка профиля.`});
+  });
+
+  async function buildShowcaseBundle(db, ownerId, includeEditor=false){
+    const owner=await dbFirst(db,'SELECT telegram_id,username,first_name FROM users WHERE telegram_id=?',String(ownerId));
+    if(!owner) return null;
+    const current=await dbFirst(db,'SELECT showcase_title,frame_key,updated_at FROM user_showcases WHERE telegram_id=?',String(ownerId))||{showcase_title:'Коллекционер',frame_key:'default',updated_at:null};
+    const items=await dbAll(db,`SELECT inv.id AS inventory_id,inv.item_id,inv.background_key,inv.serial_number,ci.title,ci.image_url,ci.kind,ci.value_stars
+      FROM user_showcase_items usi JOIN inventory inv ON inv.id=usi.inventory_id JOIN case_items ci ON ci.id=inv.item_id
+      WHERE usi.telegram_id=? AND inv.telegram_id=? AND inv.status='owned' ORDER BY usi.sort_order,usi.created_at LIMIT 6`,String(ownerId),String(ownerId));
+    const unlockedRewards=await dbAll(db,'SELECT collection_id,reward_title,reward_frame_key,claimed_at FROM user_collection_rewards WHERE telegram_id=? ORDER BY claimed_at DESC',String(ownerId));
+    const bundle={ok:true,profile:owner,showcase:current,items,unlockedRewards};
+    if(includeEditor){bundle.availableItems=await dbAll(db,`SELECT inv.id AS inventory_id,inv.item_id,inv.background_key,inv.serial_number,ci.title,ci.image_url,ci.kind,ci.value_stars
+      FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.status='owned' ORDER BY inv.created_at DESC LIMIT 300`,String(ownerId));}
+    return bundle;
+  }
+
+  app.get('/api/showcase', async (req,res)=>{
+    const userId=String(req.user.telegram_id); const bundle=await buildShowcaseBundle(dbOf(req),userId,true);
+    return bundle ? json(res,200,{...bundle,isMine:true}) : fail(res,404,'Профиль не найден');
+  });
+
+  app.get('/api/showcase/:telegramId', async (req,res)=>{
+    const targetId=String(req.params.telegramId||'');
+    if(!/^\d{1,20}$/.test(targetId)) return fail(res,400,'Неверный ID игрока');
+    const userId=String(req.user.telegram_id); const bundle=await buildShowcaseBundle(dbOf(req),targetId,targetId===userId);
+    return bundle ? json(res,200,{...bundle,isMine:targetId===userId}) : fail(res,404,'Игрок не найден');
+  });
+
+  app.post('/api/showcase', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id); const rawIds=req.body?.inventoryIds;
+    if(!Array.isArray(rawIds)||rawIds.length>6) return fail(res,400,'Можно закрепить не более 6 подарков');
+    const inventoryIds=[...new Set(rawIds.map(v=>String(v||'').trim()).filter(Boolean))];
+    if(inventoryIds.length!==rawIds.length) return fail(res,400,'Витрина содержит повторяющиеся или пустые предметы');
+    if(inventoryIds.length){const placeholders=inventoryIds.map(()=>'?').join(',');const valid=await dbAll(db,`SELECT id FROM inventory WHERE telegram_id=? AND status='owned' AND id IN (${placeholders})`,userId,...inventoryIds);if(valid.length!==inventoryIds.length)return fail(res,409,'Выбран один или несколько предметов, которых уже нет в коллекции');}
+    const title=String(req.body?.title||'Коллекционер').trim().slice(0,60); const frameKey=String(req.body?.frameKey||'default').trim();
+    const rewards=await dbAll(db,'SELECT reward_title,reward_frame_key FROM user_collection_rewards WHERE telegram_id=?',userId);
+    const validTitle=title==='Коллекционер'||rewards.some(r=>r.reward_title===title);
+    const validFrame=frameKey==='default'||rewards.some(r=>r.reward_frame_key===frameKey);
+    if(!validTitle||!validFrame)return fail(res,400,'Этот титул или рамка ещё не разблокированы');
+    const statements=[
+      db.prepare(`INSERT INTO user_showcases(telegram_id,showcase_title,frame_key,updated_at) VALUES(?,?,?,?) ON CONFLICT(telegram_id) DO UPDATE SET showcase_title=excluded.showcase_title,frame_key=excluded.frame_key,updated_at=excluded.updated_at`).bind(userId,title,frameKey,nowIso()),
+      db.prepare('DELETE FROM user_showcase_items WHERE telegram_id=?').bind(userId)
+    ];
+    for(let index=0;index<inventoryIds.length;index++) statements.push(db.prepare('INSERT INTO user_showcase_items(telegram_id,inventory_id,sort_order,created_at) VALUES(?,?,?,?)').bind(userId,inventoryIds[index],index,nowIso()));
+    await db.batch(statements);
+    const bundle=await buildShowcaseBundle(db,userId,true);
+    return json(res,200,{...bundle,isMine:true,message:'Витрина сохранена'});
   });
 
   app.get('/api/live-wins', async (req, res) => {
     const wins = await dbAll(dbOf(req), `SELECT id,username,item_title,image_url,value_stars,created_at FROM live_wins ORDER BY id DESC LIMIT 18`);
     return json(res, 200, { ok: true, wins });
-  });
-
-  app.get('/api/inventory', async (req, res) => {
-    const db = dbOf(req);
-    const items = await dbAll(db, `SELECT inv.id AS inventory_id,inv.status,inv.source,inv.created_at,ci.id AS item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.telegram_id=? AND inv.status IN ('owned','withdraw_pending') ORDER BY inv.created_at DESC LIMIT 100`, req.user.telegram_id);
-    return json(res, 200, { ok: true, items });
   });
 
   app.get('/api/subscription/status', async (req, res) => {
@@ -979,8 +1239,47 @@ export function createApp(envProvider = () => ({})) {
       ...c,
       items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY created_at,id', c.id)
     })));
+    const collections = await dbAll(db, `SELECT sc.*,COUNT(sci.item_id) AS item_count,
+      SUM(CASE WHEN sci.is_required=1 THEN 1 ELSE 0 END) AS required_count,
+      SUM(CASE WHEN sci.is_secret=1 THEN 1 ELSE 0 END) AS secret_count
+      FROM seasonal_collections sc LEFT JOIN seasonal_collection_items sci ON sci.collection_id=sc.id
+      GROUP BY sc.id ORDER BY sc.created_at DESC LIMIT 50`);
     const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween Pass',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests, offers, broadcasts, auditLogs });
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests, offers, broadcasts, auditLogs, collections });
+  });
+
+  // Admin creator for seasonal collections; secret items are optional and remain hidden until collected.
+  app.post('/api/admin/collections', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const body=req.body||{};
+    const title=String(body.title||'').trim().slice(0,80); const description=String(body.description||'').trim().slice(0,240);
+    const imageUrl=normalizeImageUrl(body.imageUrl||'case-halloween.png')||'case-halloween.png';
+    const startsRaw=String(body.startsAt||''); const endsRaw=String(body.endsAt||''); const startMs=Date.parse(startsRaw); const endMs=Date.parse(endsRaw);
+    const itemIds=Array.isArray(body.itemIds)?[...new Set(body.itemIds.map(v=>String(v||'').trim()).filter(Boolean))]:[];
+    const secretItemId=String(body.secretItemId||'').trim();
+    const rewardTitle=String(body.rewardTitle||'Коллекционер').trim().slice(0,60);
+    const frameKey=String(body.frameKey||'seasonal-frame').trim().toLowerCase(); const active=body.active?1:0;
+    if(title.length<3) return fail(res,400,'Название коллекции должно содержать минимум 3 символа');
+    if(!Number.isFinite(startMs)||!Number.isFinite(endMs)||startMs>=endMs) return fail(res,400,'Проверь даты начала и окончания коллекции');
+    if(itemIds.length<2||itemIds.length>20) return fail(res,400,'Выбери от 2 до 20 разных предметов коллекции');
+    if(secretItemId&&!itemIds.includes(secretItemId)) return fail(res,400,'Секретный предмет должен входить в выбранные предметы коллекции');
+    if(!rewardTitle) return fail(res,400,'Укажи титул за коллекцию');
+    if(!/^[a-z0-9_-]{2,40}$/.test(frameKey)) return fail(res,400,'ID рамки должен состоять из латинских букв, цифр, _ или -');
+    const placeholders=itemIds.map(()=>'?').join(',');
+    const found=await dbAll(db,`SELECT id FROM case_items WHERE id IN (${placeholders})`,...itemIds);
+    if(found.length!==itemIds.length) return fail(res,400,'Один или несколько предметов больше не доступны в каталоге');
+    if(itemIds.filter(itemId=>itemId!==secretItemId).length<2) return fail(res,400,'Нужно минимум 2 обязательных предмета помимо секретного');
+    const collectionId=`season-${id()}`; const startsAt=new Date(startMs).toISOString(); const endsAt=new Date(endMs).toISOString();
+    await dbRun(db,`INSERT INTO seasonal_collections(id,title,description,image_url,starts_at,ends_at,reward_title,reward_frame_key,active,created_by,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,collectionId,title,description,imageUrl,startsAt,endsAt,rewardTitle,frameKey,active,String(req.user?.telegram_id||''),nowIso(),nowIso());
+    for(const itemId of itemIds) await dbRun(db,`INSERT INTO seasonal_collection_items(collection_id,item_id,is_secret,is_required) VALUES(?,?,?,?)`,collectionId,itemId,itemId===secretItemId?1:0,itemId===secretItemId?0:1);
+    return json(res,200,{ok:true,collection:{id:collectionId,title,description,image_url:imageUrl,starts_at:startsAt,ends_at:endsAt,reward_title:rewardTitle,reward_frame_key:frameKey,active,item_count:itemIds.length,secret_count:secretItemId?1:0},message:'Сезонная коллекция создана'});
+  });
+
+  app.patch('/api/admin/collections/:collectionId/status', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const active=req.body?.active?1:0; const collectionId=String(req.params.collectionId||'');
+    const result=await dbRun(db,'UPDATE seasonal_collections SET active=?,updated_at=? WHERE id=?',active,nowIso(),collectionId);
+    if((result.meta?.changes||0)===0) return fail(res,404,'Сезонная коллекция не найдена');
+    return json(res,200,{ok:true,active:!!active,message:active?'Коллекция включена':'Коллекция отключена'});
   });
 
   // Create or update a time-limited offer. Price is paid with internal app credits (★), not Telegram Stars.

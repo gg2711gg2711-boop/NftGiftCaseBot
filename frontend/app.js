@@ -7,7 +7,7 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
   const S = {
-    view: 'home', filter: 'all', search: '', catalogFilter: 'all', catalogSearch: '', cases: [], currentCase: null, quantity: 1,
+    view: 'home', filter: 'all', search: '', cases: [], currentCase: null, quantity: 1,
     balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
     adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
     demoInventory: [], lastSpin: null, caseSort: false
@@ -188,17 +188,17 @@
   }
   function cardMarkup(c, free = false) {
     const image = imageSrc(c.image_url);
-    const tag = free ? (c.id === 'daily' ? 'Подарок каждый день' : 'Подарок ждёт') : `${money(c.price_xtr, 'Stars')}`;
-    const label = free ? (c.id === 'daily' ? 'Забрать' : 'Бесплатный бонус') : 'Открыть';
+    const tag = free ? 'Бесплатное открытие' : `${money(c.price_xtr, 'Stars')}`;
+    const label = free ? 'Открыть бесплатно' : 'Открыть';
     const button = free ? `<button class="tag-price free" data-claim-case="${esc(c.id)}">${label}</button>` : `<button class="tag-price" data-open-case="${esc(c.id)}">${starSvg()} ${esc(c.price_xtr)} Stars</button>`;
     return `<article class="case-card" data-case-card="${esc(c.id)}"><button class="case-card-main" data-open-case="${esc(c.id)}" aria-label="Открыть ${esc(c.title)}"><div class="case-art"><img loading="lazy" src="${image}" alt="${esc(c.title)}" /></div><div class="case-card-title">${esc(c.title)}</div></button><div class="case-card-foot"><span class="tag-label">${esc(tag)}</span>${button}</div></article>`;
   }
   function renderHome() {
-    const freeCases = [caseById('daily'), caseById('nft-mini')].filter(Boolean);
-    $('#free-grid').innerHTML = freeCases.map(c => cardMarkup(c, true)).join('');
-    const items = filteredCases().filter(c => !['daily','nft-mini'].includes(c.id));
-    $('#case-grid').innerHTML = items.map(c => cardMarkup(c, false)).join('') || `<div class="empty-inline">Ничего не найдено</div>`;
-    if (S.isAdmin) $('#admin-shortcut-wrap').classList.remove('hidden');
+    // The old hard-coded free panel (daily + nft-mini) is intentionally no longer rendered.
+    // Admin-created free cases remain discoverable in the cases grid and keep their free-claim action.
+    const items = filteredCases().filter(c => !['daily','nft-mini'].includes(String(c.id)));
+    $('#case-grid').innerHTML = items.map(c => cardMarkup(c, Number(c.is_free) === 1)).join('') || `<div class="empty-inline">Ничего не найдено</div>`;
+    if (S.isAdmin) $('#admin-shortcut-wrap')?.classList.remove('hidden');
   }
   function offerDate(value, options = {}) {
     if (!value) return '—'; const date = new Date(value);
@@ -244,32 +244,6 @@
     finally{if(btn)btn.disabled=false;}
   }
 
-  function catalogAssetUrl(item) {
-    const url = String(item.image_url || '');
-    if (url.startsWith('https://cdn.jsdelivr.net/gh/ssamy2/TG_Photos@main/webp/by_name/') || url.startsWith('https://cdn.jsdelivr.net/gh/ssamy2/TelegramGiftsAssests@main/webp/by_name/')) return url;
-    return asset(url);
-  }
-  function renderGiftCatalog() {
-    const source = Array.isArray(window.NGC_GIFT_CATALOG) ? window.NGC_GIFT_CATALOG : [];
-    const term = String(S.catalogSearch || '').trim().toLowerCase();
-    const filtered = source.filter(item => (S.catalogFilter === 'all' || item.kind === S.catalogFilter) && (!term || item.name.toLowerCase().includes(term)));
-    const count = $('#gift-catalog-count');
-    const grid = $('#gift-catalog-grid');
-    if (!grid || !count) return;
-    count.textContent = `${filtered.length} / ${source.length}`;
-    grid.innerHTML = filtered.map(item => {
-      const image = catalogAssetUrl(item);
-      const kind = item.kind === 'nft' ? 'NFT' : 'ОБЫЧНЫЙ';
-      const detail = item.kind === 'nft' ? `Выход: ${formatCatalogDate(item.release_date)} · Улучшение: ${item.upgrade_available ? 'указано' : 'не указано'}` : 'Базовый подарок';
-      const fallback = item.image_fallback_url || './assets/gift-box.png';
-      return `<article class="gift-catalog-card"><div class="gift-catalog-art"><img loading="lazy" decoding="async" src="${esc(image)}" data-catalog-fallback="${esc(fallback)}" alt="${esc(item.name)}" /></div><div class="gift-catalog-meta"><span class="catalog-kind ${item.kind === 'nft' ? 'nft' : 'regular'}">${kind}</span><strong title="${esc(item.name)}">${esc(item.name)}</strong><small>${esc(detail)}</small></div></article>`;
-    }).join('') || `<div class="empty-inline">Подарки не найдены</div>`;
-  }
-  function formatCatalogDate(iso) {
-    if (!iso) return '—';
-    const d = new Date(`${iso}T00:00:00Z`);
-    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'UTC' });
-  }
   function toLocalDateTimeInput(value) {
     if (!value) return '';
     const date = new Date(value);
@@ -337,7 +311,7 @@
     button.setAttribute('aria-label', `Профиль ${esc(tgUser?.first_name || S.user?.first_name || 'игрока')}`);
   }
   function renderAll() {
-    renderProfileAvatar(); renderBalance(); renderLive(); renderHome(); renderOffers(); renderGiftCatalog(); renderInventory(); renderUpgrade(); renderEvent(); renderGlobalDisplay();
+    renderProfileAvatar(); renderBalance(); renderLive(); renderHome(); renderOffers(); renderInventory(); renderUpgrade(); renderEvent(); renderGlobalDisplay();
     syncAdminNavigation();
   }
 
@@ -1089,7 +1063,6 @@
     if(target.matches('[data-close-modal]'))return closeModal();
     if(target.matches('[data-view]')) {sound();const next=target.dataset.view;if(next==='cases')S.filter='all';setView(next);return;}
     if(target.matches('[data-filter]')) {S.filter=target.dataset.filter;$$('[data-filter]').forEach(b=>b.classList.toggle('selected',b===target));renderHome();sound();return;}
-    if(target.matches('[data-catalog-filter]')) {S.catalogFilter=target.dataset.catalogFilter;$$('[data-catalog-filter]').forEach(b=>b.classList.toggle('selected',b===target));renderGiftCatalog();sound();return;}
     if(target.matches('[data-jump]')) {setView(target.dataset.jump);return;}
     if(target.matches('[data-open-case]')) {openCase(target.dataset.openCase);sound();return;}
     if(target.matches('[data-claim-case]')) {claimFree(target.dataset.claimCase);return;}
@@ -1149,7 +1122,6 @@
 
   async function onInput(event) {
     if(event.target.id==='search-input'){S.search=event.target.value;renderHome();}
-    if(event.target.id==='gift-catalog-search'){S.catalogSearch=event.target.value;renderGiftCatalog();}
     if(event.target.id==='bet-range'){S.upgradeBet=Number(event.target.value);updateUpgradeChance();}
     if(event.target.id==='admin-case-select')fillAdminCase();
     if(event.target.id==='admin-new-case-free')$('#admin-new-case-price').disabled=event.target.checked;
@@ -1161,7 +1133,6 @@
   }
 
   // SVG wheel ticks are decorative and are rendered once; all drop images are PNGs from the project asset CDN.
-  document.addEventListener('error', event => { const img = event.target; if (!(img instanceof HTMLImageElement) || !img.dataset.catalogFallback) return; const fallback = img.dataset.catalogFallback; if (fallback.startsWith('https://cdn.jsdelivr.net/')) { img.dataset.catalogFallback = './assets/gift-box.png'; img.src = fallback; } else { delete img.dataset.catalogFallback; img.src = asset(fallback); } }, true);
   document.addEventListener('click',event=>{ const button=event.target.closest('button'); if(button) sound('click'); handleClick(event); });
   document.addEventListener('input',onInput);
   document.addEventListener('change',onInput);

@@ -270,3 +270,39 @@ html[data-theme="halloween"] .theme-admin-status { border-color:rgba(255,145,75,
 @media(min-width:620px){.season-map-view{padding-left:16px;padding-right:16px}.season-map-heading{grid-template-columns:minmax(0,1fr) minmax(270px,.75fr);align-items:center}.season-map-heading h1{font-size:52px}.season-map-heading-copy p{font-size:11px}.season-countdown small{font-size:7px}.season-countdown strong{font-size:11px}.season-map-world{height:clamp(1320px,145vw,1500px)}.season-map-node{width:50px;height:50px}.season-map-node.is-final{width:76px;height:76px}.season-node-number{height:19px;min-width:24px;font-size:10px}.season-map-tabs button{min-height:40px}.season-map-tabs button>span{font-size:10px}.season-reward-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.season-map-legend{margin-top:12px}.season-map-world-hint{font-size:10px}}
 @media(max-width:370px){.season-map-view{padding-left:5px;padding-right:5px}.season-map-toolbar{gap:5px}.season-brand{font-size:12px}.season-countdown{padding:6px 6px}.season-countdown small{font-size:5px}.season-countdown strong{font-size:9px}.season-map-tabs button{padding:7px 6px;font-size:9px}.season-map-tabs button>span{font-size:8px}.season-map-node{width:38px;height:38px}.season-map-node.is-final{width:58px;height:58px}.season-node-orb>span{font-size:18px}.season-node-number{height:16px;min-width:20px;font-size:8px;bottom:-6px}.season-map-legend button small{font-size:6px}.season-map-heading h1{font-size:33px}}
 @media(prefers-reduced-motion:reduce){.season-map-content,.season-screen,.season-map-world:before,.season-world-moon,.season-world-fog,.season-route-svg path,.season-map-node.unlocked .season-node-glow,.season-final-crown,.season-embers i,.season-progress-modal .season-modal-crown,.season-modal-aura,.season-reveal-rays,.season-reveal-art,.season-reveal-confetti i{animation:none!important;transition:none!important}}
+
+/* Video-inspired upgrader: charged chance ring, slow-down and result burst. */
+#wheel-wrap{isolation:isolate;transition:filter .25s ease,transform .25s ease}
+#wheel-wrap::before{content:"";position:absolute;inset:8%;z-index:0;border-radius:50%;pointer-events:none;background:conic-gradient(from -110deg,transparent 0 18%,rgba(255,183,52,.02) 25%,rgba(255,184,47,.24) 36%,transparent 45% 66%,rgba(255,194,62,.15) 78%,transparent 88%);filter:blur(12px);opacity:.6;transition:opacity .3s}
+#wheel-wrap.is-spinning{transform:scale(1.018);filter:drop-shadow(0 0 20px rgba(255,171,36,.18))}
+#wheel-wrap.is-spinning::before{opacity:1;animation:upgrade-aura-spin 1.25s linear infinite}
+#wheel-wrap.is-spinning .upgrade-wheel{filter:drop-shadow(0 0 8px rgba(255,177,41,.4));animation:upgrade-wheel-pulse .62s ease-in-out infinite alternate}
+#wheel-wrap.is-spinning .wheel-center-art{box-shadow:0 0 0 5px rgba(16,20,36,.45),0 0 34px rgba(255,174,35,.4),inset 0 2px 14px rgba(255,255,255,.06)}
+#wheel-wrap.is-spinning .wheel-center-art img{animation:upgrade-item-float .7s ease-in-out infinite alternate}
+#wheel-wrap.is-win::after,#wheel-wrap.is-loss::after{content:"";position:absolute;inset:7%;border-radius:50%;pointer-events:none;animation:upgrade-result-burst .85s ease-out both}
+#wheel-wrap.is-win::after{border:2px solid rgba(255,211,98,.8);box-shadow:0 0 25px rgba(255,184,44,.55),inset 0 0 30px rgba(255,191,52,.2)}
+#wheel-wrap.is-loss::after{border:2px solid rgba(153,161,191,.4);box-shadow:0 0 20px rgba(109,118,151,.22)}
+.upgrade-result.is-running{color:#ffd36b;animation:upgrade-text-glow .8s ease-in-out infinite alternate}
+.upgrade-result.won{animation:upgrade-text-pop .5s cubic-bezier(.2,.9,.2,1.2) both}
+@keyframes upgrade-aura-spin{to{transform:rotate(360deg)}}
+@keyframes upgrade-wheel-pulse{to{filter:brightness(1.22) drop-shadow(0 0 15px rgba(255,177,41,.45))}}
+@keyframes upgrade-item-float{to{transform:translateY(-4px) scale(1.05);filter:drop-shadow(0 0 12px rgba(255,203,87,.65))}}
+@keyframes upgrade-result-burst{0%{transform:scale(.82);opacity:0}35%{opacity:1}100%{transform:scale(1.08);opacity:0}}
+@keyframes upgrade-text-glow{to{text-shadow:0 0 16px rgba(255,194,69,.7)}}
+@keyframes upgrade-text-pop{0%{transform:scale(.92);opacity:.5}70%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}}
+
+/* Craft sequence follows the reference video: floating cards gather, collapse, then reveal. */
+.craft-animation-overlay.is-gathering .craft-ritual-core{animation:craft-core-turn .8s ease-in-out infinite,craft-core-breathe 1s ease-in-out infinite alternate;box-shadow:0 0 35px rgba(255,194,73,.8),0 0 100px rgba(159,100,255,.4)}
+.craft-animation-overlay.is-gathering .craft-ritual-ring{border-color:rgba(255,215,113,.7);box-shadow:0 0 26px rgba(255,191,67,.25)}
+.craft-animation-overlay.is-merging .craft-ritual-items{animation:craft-items-flash .95s ease-in both}
+.craft-animation-overlay.is-merging .craft-orbit-item{animation:craft-item-collapse .85s cubic-bezier(.65,0,.9,.25) both!important;animation-delay:calc(var(--orbit-index)*70ms)!important}
+.craft-animation-overlay.is-merging .craft-ritual-core{transform:rotate(135deg) scale(1.32);filter:brightness(1.8);box-shadow:0 0 45px #ffd86e,0 0 130px rgba(255,138,36,.65);transition:transform .7s ease,filter .5s,box-shadow .5s}
+.craft-animation-overlay.is-merging .craft-ritual-flare{opacity:1;filter:blur(7px);animation-duration:.65s}
+.craft-animation-overlay.is-merging .craft-ritual-ring{animation-duration:.65s;border-width:2px}
+.craft-animation-overlay.is-success .craft-ritual-result{animation:craft-result-reveal .85s cubic-bezier(.17,.85,.21,1.25) both,craft-result-glow 1.5s ease-in-out infinite alternate}
+.craft-animation-overlay.is-success .craft-ritual-scene::after{content:"✦  ✧  ·  ✦  ·  ✧  ✦";position:absolute;inset:-8%;display:grid;place-items:center;color:#ffe6a2;font-size:clamp(16px,4vw,24px);letter-spacing:.4em;text-shadow:0 0 16px #ffb52d;pointer-events:none;animation:craft-spark-burst 1s ease-out both}
+@keyframes craft-item-collapse{0%{opacity:1;filter:brightness(1);scale:1}65%{opacity:1;filter:brightness(1.8);scale:.72}100%{opacity:0;transform:translate(0,0) rotate(0) scale(.08);filter:brightness(3)}}
+@keyframes craft-items-flash{0%{filter:brightness(1)}45%{filter:brightness(2.5)}100%{filter:brightness(1)}}
+@keyframes craft-result-glow{to{box-shadow:0 0 0 7px rgba(255,217,117,.1),0 0 48px rgba(255,196,71,.72),0 0 120px rgba(159,91,255,.32)}}
+@keyframes craft-spark-burst{0%{opacity:0;transform:scale(.2) rotate(-20deg)}35%{opacity:1}100%{opacity:0;transform:scale(1.5) rotate(20deg)}}
+@media(prefers-reduced-motion:reduce){#wheel-wrap *,#wheel-wrap::before,.craft-animation-overlay.is-gathering *, .craft-animation-overlay.is-merging *{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}

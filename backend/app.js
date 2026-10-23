@@ -1066,19 +1066,44 @@ export function createApp(envProvider = () => ({})) {
   app.post('/api/upgrade', async (req, res) => {
     const db = dbOf(req); const userId = String(req.user.telegram_id);
     const targetId = String(req.body?.targetItemId || '');
+    const inventoryId = String(req.body?.inventoryId || '');
+    const target = await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', targetId);
+    if (!target) return fail(res, 404, 'Целевой предмет не найден');
+
+    // Item-to-item upgrader: consume exactly one owned inventory item, then roll on the server.
+    if (inventoryId) {
+      const source = await dbFirst(db, `SELECT inv.id,inv.item_id,inv.status,ci.title,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=? AND inv.telegram_id=? AND inv.status='owned'`, inventoryId, userId);
+      if (!source) return fail(res, 409, 'Исходный подарок больше недоступен. Обнови инвентарь.');
+      if (String(source.item_id) === String(target.id)) return fail(res, 400, 'Выбери другой предмет для улучшения');
+      const chance = Math.min(95, Math.max(0.5, Number(source.value_stars || 1) / Math.max(1, Number(target.value_stars || 1)) * 100));
+      const reserved = await dbRun(db, `UPDATE inventory SET status='consumed' WHERE id=? AND telegram_id=? AND status='owned'`, inventoryId, userId);
+      if (Number(reserved.meta?.changes || 0) !== 1) return fail(res, 409, 'Этот подарок уже используется в другой операции.');
+      await dbRun(db, 'DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id=?', userId, inventoryId).catch(() => {});
+      const won = secureInt(100000) / 1000 < chance;
+      let awardedId = null;
+      try {
+        if (won) awardedId = await awardDrop(db, userId, target, 'upgrade');
+      } catch (err) {
+        await dbRun(db, `UPDATE inventory SET status='owned' WHERE id=? AND telegram_id=? AND status='consumed'`, inventoryId, userId).catch(() => {});
+        throw err;
+      }
+      return json(res, 200, { ok:true, won, chance:Number(chance.toFixed(2)), item:won?target:null, inventoryId:awardedId, consumedInventoryId:inventoryId, message:won?`Апгрейд успешен: получен «${target.title}»`:`Апгрейд не удался. «${source.title}» использован.` });
+    }
+
+    // Backward-compatible balance-based mode for older clients still in cache.
     const bet = Math.floor(Number(req.body?.bet) || 0);
     if (!Number.isSafeInteger(bet) || bet < 1 || bet > 100000) return fail(res, 400, 'Некорректная ставка');
     const user = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId);
     if (!user || user.balance < bet) return fail(res, 409, 'Недостаточно средств на внутреннем балансе');
-    const target = await dbFirst(db, 'SELECT * FROM case_items WHERE id=?', targetId);
-    if (!target) return fail(res, 404, 'Целевой предмет не найден');
     const chance = Math.min(95, Math.max(0.5, bet / Math.max(1, target.value_stars) * 100));
     const roll = secureInt(100000) / 1000;
-    await dbRun(db, 'UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?', bet, userId, bet);
+    const debit = await dbRun(db, 'UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?', bet, userId, bet);
+    if (Number(debit.meta?.changes || 0) !== 1) return fail(res, 409, 'Недостаточно средств: баланс изменился. Обнови страницу и попробуй снова.');
     const won = roll < chance;
-    let inventoryId = null;
-    if (won) inventoryId = await awardDrop(db, userId, target, 'upgrade');
-    return json(res, 200, { ok: true, won, chance: Number(chance.toFixed(2)), roll: Number(roll.toFixed(3)), item: won ? target : null, inventoryId, balance: (await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId)).balance });
+    let awardedId = null;
+    try { if (won) awardedId = await awardDrop(db, userId, target, 'upgrade'); }
+    catch (err) { await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', bet, userId).catch(() => {}); throw err; }
+    return json(res, 200, { ok:true, won, chance:Number(chance.toFixed(2)), roll:Number(roll.toFixed(3)), item:won?target:null, inventoryId:awardedId, balance:(await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId)).balance });
   });
 
   app.get('/api/event', async (req, res) => {

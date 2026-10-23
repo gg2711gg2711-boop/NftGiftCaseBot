@@ -9,7 +9,7 @@
   const S = {
     view: 'home', filter: 'all', search: '', cases: [], currentCase: null, quantity: 1,
     balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
-    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, seasonScreen: 'map', muted: localStorage.getItem('ngc-muted') === '1',
+    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, selectedUpgradeSource: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, seasonScreen: 'map', muted: localStorage.getItem('ngc-muted') === '1',
     demoInventory: [], lastSpin: null, caseSort: false,
     marketListings: [], craftSelected: [], collections: [], showcase: null, showcaseTargetId: null
   };
@@ -631,8 +631,8 @@
     $('#craft-ritual-core').classList.remove('hidden','is-revealed');
     $('#craft-ritual-result').classList.add('hidden');
     host.innerHTML=materials.map((item,i)=>`<div class="craft-orbit-item orbit-${i+1}" style="--orbit-index:${i}"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span>${esc(backgroundLabel(item.background_key))}</span></div>`).join('');
-    overlay.classList.remove('hidden','is-success','is-failed');
-    requestAnimationFrame(()=>overlay.classList.add('is-active'));
+    overlay.classList.remove('hidden','is-success','is-failed','is-merging');
+    requestAnimationFrame(()=>overlay.classList.add('is-active','is-gathering'));
   }
   function revealCraftAnimation(item) {
     $('#craft-ritual-phase').textContent='НОВЫЙ ЭКЗЕМПЛЯР СОЗДАН';
@@ -642,11 +642,12 @@
     const result=$('#craft-ritual-result');
     result.innerHTML=`<img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><span>${esc(backgroundLabel(item.background_key||item.background))}</span>`;
     result.classList.remove('hidden');
+    $('#craft-animation-overlay').classList.remove('is-merging','is-gathering');
     $('#craft-animation-overlay').classList.add('is-success');
   }
   function closeCraftAnimation() {
-    const overlay=$('#craft-animation-overlay');overlay.classList.remove('is-active');
-    window.setTimeout(()=>{overlay.classList.add('hidden');overlay.classList.remove('is-success','is-failed');},420);
+    const overlay=$('#craft-animation-overlay');overlay.classList.remove('is-active','is-gathering','is-merging');
+    window.setTimeout(()=>{overlay.classList.add('hidden');overlay.classList.remove('is-success','is-failed','is-gathering','is-merging');},420);
   }
   async function performCraft() {
     const ids=S.craftSelected||[];if(ids.length<2||ids.length>4)return toast('Выбери от 2 до 4 одинаковых предметов','error');
@@ -657,11 +658,17 @@
     let answer=null;let problem=null;
     const pending=api('/api/craft',{method:'POST',body:{inventoryIds:ids}}).then(value=>{answer=value;}).catch(err=>{problem=err;});
     try{
-      await wait(2600);
+      await wait(950);
+      $('#craft-ritual-phase').textContent='СОБИРАЕМ ЭНЕРГИЮ';
+      $('#craft-ritual-caption').textContent='Предметы притягиваются к ядру…';
+      await wait(700);
+      $('#craft-animation-overlay').classList.remove('is-gathering');
+      $('#craft-animation-overlay').classList.add('is-merging');
+      $('#craft-ritual-phase').textContent='СЛИЯНИЕ АТРИБУТОВ';
+      $('#craft-ritual-caption').textContent='Фон и серийный номер создаются сервером';
       await pending;
       if(problem) throw problem;
-      $('#craft-ritual-phase').textContent='Атрибуты объединяются…';
-      await wait(650);
+      await wait(900);
       revealCraftAnimation(answer.item||{});
       S.craftSelected=[];
       await wait(1800);
@@ -775,38 +782,85 @@
     if (wheelItem) { wheelItem.src = src; wheelItem.alt = `Выбранный подарок: ${target.title}`; }
     updateUpgradeChance();
   }
+  function chooseUpgradeSource(item) {
+    if(!item)return;
+    S.selectedUpgradeSource=item;
+    $('#upgrade-source-image').src=imageSrc(item.image_url);
+    $('#upgrade-source-title').textContent=item.title;
+    $('#upgrade-source-value').textContent=`Стоимость ${money(item.value_stars)} · #${item.serial_number||'—'}`;
+    updateUpgradeChance();
+  }
   function updateUpgradeChance() {
-    const target=S.selectedTarget||allTargetItems()[0]; const bal=Math.max(1,Number(S.balance)||0);
-    const maxBet=Math.max(1,Math.min(bal,1000)); const bet= Math.max(1,Math.min(maxBet,Number(S.upgradeBet)||1)); S.upgradeBet=bet;
-    $('#upgrade-bet-value').textContent=`${bet} кредит${bet===1?'':'ов'}`; $('#bet-range-label').textContent=String(bet); $('#bet-range').max=String(maxBet); $('#bet-range').value=String(Math.min(bet,maxBet));
-    const chance=target?Math.min(95,Math.max(.5,bet/Math.max(1,Number(target.value_stars))*100)):0;
-    $('#wheel-chance').textContent=`${chance.toFixed(1)}%`;$('#chance-label').textContent=`Шанс ${chance.toFixed(1)}%`;$('#chance-bar').style.width=`${chance}%`;
+    const target=S.selectedTarget||allTargetItems()[0];
+    const source=S.selectedUpgradeSource;
+    const chance=target&&source?Math.min(95,Math.max(.5,Number(source.value_stars||1)/Math.max(1,Number(target.value_stars||1))*100)):0;
+    $('#wheel-chance').textContent=source&&target?`${chance.toFixed(2)}%`:'—';
+    $('#chance-label').textContent=source&&target?`Шанс ${chance.toFixed(2)}%`:'Сначала выбери подарок';
+    $('#chance-bar').style.width=`${chance}%`;
     const circumference=2*Math.PI*142; const sector=$('#chance-sector'); sector.setAttribute('stroke-dasharray',`${circumference*chance/100} ${circumference*(1-chance/100)}`); sector.setAttribute('stroke-dashoffset','0');
   }
   function renderUpgrade() {
     updateWheelTicks();
     const target=S.selectedTarget||allTargetItems()[0]; if(target) chooseTarget(target);
-    $('#upgrade-inventory').innerHTML=(S.inventory||[]).slice(0,12).map(i=>`<button class="mini-item" data-target-item="${esc(i.item_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся после открытия кейсов.</span>`;
+    const owned=(S.inventory||[]).filter(i=>i.status==='owned'||!i.status);
+    if(!S.selectedUpgradeSource||!owned.some(i=>String(i.inventory_id)===String(S.selectedUpgradeSource.inventory_id))) S.selectedUpgradeSource=owned[0]||null;
+    if(S.selectedUpgradeSource) chooseUpgradeSource(S.selectedUpgradeSource);
+    else {$('#upgrade-source-title').textContent='Нет доступных подарков';$('#upgrade-source-value').textContent='Сначала получи предмет';$('#upgrade-source-image').src='./assets/gift-box.png';updateUpgradeChance();}
+    $('#upgrade-inventory').innerHTML=owned.slice(0,12).map(i=>`<button class="mini-item" data-upgrade-source-item="${esc(i.inventory_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></button>`).join('') || `<span class="muted-note">Предметы появятся после открытия кейса.</span>`;
+  }
+  function showUpgradeSourceModal() {
+    const owned=(S.inventory||[]).filter(i=>i.status==='owned'||!i.status);
+    openModal(`<h2 class="modal-title" id="modal-title">Выбери исходный подарок</h2><p class="modal-copy">Этот предмет будет использован в попытке апгрейда. При неудаче он не возвращается.</p><div class="modal-grid">${owned.map(i=>`<button class="modal-choice" data-choose-upgrade-source="${esc(i.inventory_id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><span><strong>${esc(i.title)}</strong><small>${money(i.value_stars)} · #${esc(i.serial_number||'—')}</small></span></button>`).join('')||'<p class="muted-note">В инвентаре пока нет доступных предметов.</p>'}</div>`);
   }
   function showTargetModal() {
     const targets=allTargetItems();
     openModal(`<h2 class="modal-title" id="modal-title">Выберите предмет</h2><p class="modal-copy">Целевой предмет определяет стоимость и расчёт шанса.</p><div class="modal-grid">${targets.map(i=>`<button class="modal-choice" data-choose-target="${esc(i.id)}"><img src="${imageSrc(i.image_url)}" alt="${esc(i.title)}"/><span><strong>${esc(i.title)}</strong><small>${esc(money(i.value_stars))}</small></span></button>`).join('')}</div>`);
   }
   async function performUpgrade() {
-    const target=S.selectedTarget||allTargetItems()[0]; if(!target)return toast('Нет доступных предметов','error');
-    if (S.balance < S.upgradeBet) return showTopupModal();
-    if(MOCK) {
-      S.balance-=S.upgradeBet;S.user.balance=S.balance;renderBalance();
-      const chance=Math.min(95,Math.max(.5,S.upgradeBet/Math.max(1,Number(target.value_stars))*100));
-      const won=Math.random()*100<chance; $('#upgrade-wheel').style.transition='transform 2.1s cubic-bezier(.12,.7,.1,1)';$('#upgrade-wheel').style.transform=`rotate(${720+Math.random()*720}deg)`; $('#upgrade-btn').disabled=true; $('#upgrade-result').textContent='Колесо вращается…';
-      setTimeout(()=>{ $('#upgrade-wheel').style.transition='none';$('#upgrade-wheel').style.transform='rotate(0deg)';$('#upgrade-btn').disabled=false;$('#upgrade-result').textContent=won?`Успех! Получен ${target.title}`:'Не повезло — попробуйте ещё раз';$('#upgrade-result').className=`upgrade-result ${won?'won':'lost'}`;if(won) {S.inventory.unshift({inventory_id:`demo-up-${Date.now()}`,item_id:target.id,title:target.title,image_url:target.image_url,kind:target.kind,value_stars:target.value_stars,status:'owned'});sound('win');} else sound('tick');renderBalance();renderInventory();updateUpgradeChance();},2200); return;
-    }
+    const target=S.selectedTarget||allTargetItems()[0];
+    if(!target)return toast('Нет доступных целевых предметов','error');
+    const source=S.selectedUpgradeSource;
+    if(!source)return toast('Сначала выбери исходный подарок','error');
+    if(String(source.inventory_id).startsWith('demo-')===false && !(S.inventory||[]).some(i=>String(i.inventory_id)===String(source.inventory_id)&& (i.status==='owned'||!i.status)))return toast('Исходный подарок больше недоступен. Обнови инвентарь.','error');
+    const button=$('#upgrade-btn'), wrap=$('#wheel-wrap'), resultEl=$('#upgrade-result');
+    button.disabled=true; wrap.classList.remove('is-win','is-loss'); wrap.classList.add('is-spinning');
+    resultEl.textContent='Заряжаем апгрейдер…'; resultEl.className='upgrade-result is-running';
+    sound('tick');
+    let answer;
     try {
-      $('#upgrade-btn').disabled=true; $('#upgrade-result').textContent='Проверяем шанс на сервере…';
-      const result=await api('/api/upgrade',{method:'POST',body:{targetItemId:target.id,bet:S.upgradeBet}});
-      $('#upgrade-wheel').style.transition='transform 2.1s cubic-bezier(.12,.7,.1,1)';$('#upgrade-wheel').style.transform=`rotate(${720+Math.random()*720}deg)`;
-      setTimeout(async()=>{ $('#upgrade-wheel').style.transition='none';$('#upgrade-wheel').style.transform='rotate(0deg)';$('#upgrade-btn').disabled=false;$('#upgrade-result').textContent=result.won?`Успех! Получен ${result.item.title}`:'Не повезло — ставка списана';$('#upgrade-result').className=`upgrade-result ${result.won?'won':'lost'}`;if(result.won)sound('win');else sound('tick');await refreshUserData();updateUpgradeChance();},2200);
-    } catch(err) { $('#upgrade-btn').disabled=false; $('#upgrade-result').textContent='Выберите предмет для апгрейда';toast(err.message,'error'); }
+      if(MOCK) {
+        const chance=Math.min(95,Math.max(.5,Number(source.value_stars||1)/Math.max(1,Number(target.value_stars))*100));
+        await wait(1800);
+        const won=Math.random()*100<chance;
+        S.inventory=S.inventory.filter(i=>String(i.inventory_id)!==String(source.inventory_id));
+        if(won) S.inventory.unshift({inventory_id:`demo-up-${Date.now()}`,item_id:target.id,title:target.title,image_url:target.image_url,kind:target.kind,value_stars:target.value_stars,status:'owned'});
+        answer={won,item:won?target:null,chance};
+      } else {
+        // The server decides the outcome before the reveal animation. Animation never rolls or changes odds.
+        const pending=api('/api/upgrade',{method:'POST',body:{targetItemId:target.id,inventoryId:source.inventory_id}});
+        await wait(2100);
+        answer=await pending;
+      }
+      // Final slow-down, glow pulse, then reveal the authoritative result.
+      wrap.classList.remove('is-spinning'); wrap.classList.add(answer.won?'is-win':'is-loss');
+      const center=$('#wheel-item-image');
+      if(answer.won&&answer.item) center.src=imageSrc(answer.item.image_url||target.image_url);
+      resultEl.textContent=answer.won?`✨ Успех! Получен ${answer.item?.title||target.title}`:`Неудача · ставка ${S.upgradeBet} кредитов списана`;
+      resultEl.className=`upgrade-result ${answer.won?'won':'lost'}`;
+      if(answer.won)sound('win');else sound('tick');
+      if(!MOCK) await refreshUserData(); else {renderBalance();renderInventory();}
+      updateUpgradeChance();
+      await wait(1250);
+    } catch(err) {
+      wrap.classList.remove('is-spinning','is-win','is-loss');
+      resultEl.textContent=err.message||'Не удалось выполнить апгрейд'; resultEl.className='upgrade-result lost';
+      toast(err.message||'Ошибка апгрейда','error',5000);
+    } finally {
+      wrap.classList.remove('is-spinning','is-win','is-loss');
+      const center=$('#wheel-item-image'); if(center&&target)center.src=imageSrc(target.image_url);
+      button.disabled=false;
+      updateUpgradeChance();
+    }
   }
 
   function defaultEventRewardId(eventType, branch, level) {
@@ -1523,11 +1577,14 @@
     if(target.id==='more-btn') {openModal(`<h2 id="modal-title" class="modal-title">NftGiftCase</h2><p class="modal-copy">Цифровая коллекция, кейсы и апгрейдер. Оплаты проходят через Telegram Stars, а предметы и балансы ведутся на сервере.</p><div class="modal-actions"><button class="secondary-btn" data-jump="inventory">Мои предметы</button><button class="primary-btn" data-modal-action="help">Помощь</button></div>`);return;}
     if(target.id==='search-toggle')return;
     if(target.id==='target-select-btn'||target.id==='target-card') {showTargetModal();return;}
+    if(target.id==='upgrade-source-select-btn'||target.id==='upgrade-source-card') {showUpgradeSourceModal();return;}
+    if(target.matches('[data-choose-upgrade-source]')) {const item=(S.inventory||[]).find(i=>String(i.inventory_id)===target.dataset.chooseUpgradeSource);if(item)chooseUpgradeSource(item);closeModal();return;}
+    if(target.matches('[data-upgrade-source-item]')) {const item=(S.inventory||[]).find(i=>String(i.inventory_id)===target.dataset.upgradeSourceItem);if(item){chooseUpgradeSource(item);setView('upgrade');}return;}
     if(target.matches('[data-choose-target]')) {const item=allTargetItems().find(i=>i.id===target.dataset.chooseTarget);if(item)chooseTarget(item);closeModal();return;}
     if(target.matches('[data-target-item]')) {const item=allTargetItems().find(i=>i.id===target.dataset.targetItem);if(item){chooseTarget(item);setView('upgrade');}return;}
-    if(target.matches('[data-mult]')) {S.upgradeMultiplier=Number(target.dataset.mult);const targetItem=S.selectedTarget||allTargetItems()[0];S.upgradeBet=Math.max(1,Math.floor(Number(targetItem?.value_stars||20)/S.upgradeMultiplier));$$('[data-mult]').forEach(b=>b.classList.toggle('active',b===target));updateUpgradeChance();return;}
+    if(target.matches('[data-mult]')) {S.upgradeMultiplier=Number(target.dataset.mult);$$('[data-mult]').forEach(b=>b.classList.toggle('active',b===target));return;}
     if(target.id==='upgrade-btn') {performUpgrade();return;}
-    if(target.id==='upgrade-info') {openModal(`<h2 class="modal-title" id="modal-title">Как работает апгрейд</h2><p class="modal-copy">Сумма ставки списывается с внутреннего баланса. Сервер рассчитывает шанс по формуле ставка / стоимость целевого предмета и проводит случайный бросок на сервере. При неудаче ставка не возвращается. В демонстрационном режиме результат локальный и не имеет денежной ценности.</p>`);return;}
+    if(target.id==='upgrade-info') {openModal(`<h2 class="modal-title" id="modal-title">Как работает апгрейд</h2><p class="modal-copy">Выбери исходный подарок и целевой предмет. Исходный подарок расходуется при попытке; при успехе сервер выдаёт целевой предмет, при неудаче исходный не возвращается. Шанс рассчитывается сервером по соотношению стоимостей. В демонстрационном режиме результат локальный и не имеет денежной ценности.</p>`);return;}
     if(target.matches('[data-withdraw]')) {showWithdrawConfirm(target.dataset.withdraw);return;}
     if(target.matches('[data-sell]')) {showSellConfirm(target.dataset.sell);return;}
     if(target.matches('[data-confirm-sell]')) {sellItem(target.dataset.confirmSell);return;}

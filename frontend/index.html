@@ -134,16 +134,14 @@
             <div id="upgrade-result" class="upgrade-result">Выберите предмет для апгрейда</div>
           </div>
           <div class="upgrade-controls panel">
-            <div class="control-label">Ваша ставка</div>
-            <button id="upgrade-bet-card" class="bet-card"><span class="balance-orb">★</span><span><small>С баланса</small><strong id="upgrade-bet-value">5 кредитов</strong></span><svg viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button>
+            <div class="control-label control-label-row"><span>Твой предмет</span><button id="upgrade-source-select-btn" class="text-btn">Выбрать</button></div>
+            <button id="upgrade-source-card" class="target-card"><img id="upgrade-source-image" src="./assets/gift-box.png" alt="Исходный подарок"/><span><strong id="upgrade-source-title">Выбери подарок</strong><small id="upgrade-source-value">Из своего инвентаря</small></span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
+            <div class="upgrade-arrow-down" aria-hidden="true">↓</div>
             <div class="control-label control-label-row"><span>Хочу получить</span><button id="target-select-btn" class="text-btn">Выбрать</button></div>
             <button id="target-card" class="target-card"><img id="target-image" src="./assets/ring.png" alt="Целевой предмет"/><span><strong id="target-title">Blue Ring</strong><small id="target-value">Стоимость 190</small></span><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button>
-            <div class="multiplier-row"><button data-mult="2" class="multiplier-chip active">x2</button><button data-mult="4" class="multiplier-chip">x4</button><button data-mult="8" class="multiplier-chip">x8</button></div>
-            <div class="chance-range"><div class="chance-track"><span id="chance-bar"></span></div><span id="chance-label">Шанс 12.5%</span></div>
-            <div class="bet-input-row"><label for="bet-range">Ставка с баланса</label><strong id="bet-range-label">5</strong></div>
-            <input type="range" id="bet-range" min="1" max="100" value="5" />
-            <button class="primary-btn wide-btn" id="upgrade-btn">Улучшить</button>
-            <p class="muted-note">Шанс рассчитывается сервером по стоимости ставки и целевого предмета. Показанный шанс округлён.</p>
+            <div class="chance-range"><div class="chance-track"><span id="chance-bar"></span></div><span id="chance-label">Шанс —</span></div>
+            <button class="primary-btn wide-btn" id="upgrade-btn">Улучшить предмет</button>
+            <p class="muted-note">При попытке исходный подарок расходуется. При успехе ты получаешь выбранный предмет; шанс рассчитывается сервером по стоимости предметов.</p>
           </div>
         </div>
         <div class="section-heading section-heading-spaced"><h2>Мои предметы</h2><button class="text-btn" data-jump="inventory">Все <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
@@ -383,6 +381,6 @@
 
   <script src="./config.js?v=20261023-offers-broadcasts1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261024-halloween-interactive-map" defer></script>
+  <script src="./app.js?v=20261024-upgrader-craft-video-v2" defer></script>
 </body>
 </html>

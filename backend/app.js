@@ -704,6 +704,39 @@ export function createApp(envProvider = () => ({})) {
     return json(res, 200, { ok: true, items });
   });
 
+  // Public history only includes completed transactions; no estimated/fictional price points are generated.
+  app.get('/api/market/price-history/:itemId', async (req, res) => {
+    const db = dbOf(req);
+    const itemId = String(req.params.itemId || '').trim();
+    const background = ['default','blue','purple','gold','black'].includes(String(req.query.background || '')) ? String(req.query.background) : null;
+    const item = await dbFirst(db, 'SELECT id,title,image_url FROM case_items WHERE id=?', itemId);
+    if (!item) return fail(res, 404, 'Предмет не найден');
+    const where = background ? 'item_id=? AND background_key=?' : 'item_id=?';
+    const params = background ? [itemId, background] : [itemId];
+    const [history, totals] = await Promise.all([
+      dbAll(db, `SELECT price_credits,fee_credits,background_key,sold_at FROM market_price_history WHERE ${where} ORDER BY sold_at DESC LIMIT 40`, ...params),
+      dbFirst(db, `SELECT COUNT(*) AS count,ROUND(AVG(price_credits)) AS average,MIN(price_credits) AS min,MAX(price_credits) AS max FROM market_price_history WHERE ${where}`, ...params)
+    ]);
+    const count = Number(totals?.count || 0);
+    const summary = count ? { count, average:Number(totals.average), min:Number(totals.min), max:Number(totals.max) } : { count:0, average:null, min:null, max:null };
+    return json(res, 200, { ok:true, item, background, summary, history: history.reverse() });
+  });
+
+  app.get('/api/collector/codex', async (req,res)=>{
+    const db=dbOf(req); const userId=String(req.user.telegram_id);
+    const [uniqueItems,totalFound,currentItems,blackBackgrounds,crafts,sales,purchases,seasons]=await Promise.all([
+      dbFirst(db, `SELECT COUNT(DISTINCT item_id) AS n FROM inventory WHERE telegram_id=? AND status IN ('owned','listed','sold','consumed','withdraw_pending')`, userId),
+      dbFirst(db, `SELECT COUNT(*) AS n FROM inventory WHERE telegram_id=? AND status IN ('owned','listed','sold','consumed','withdraw_pending')`, userId),
+      dbFirst(db, `SELECT COUNT(*) AS n FROM inventory WHERE telegram_id=? AND status IN ('owned','listed')`, userId),
+      dbFirst(db, `SELECT COUNT(*) AS n FROM inventory WHERE telegram_id=? AND background_key='black' AND status IN ('owned','listed','sold','consumed')`, userId),
+      dbFirst(db, 'SELECT COUNT(*) AS n FROM craft_log WHERE telegram_id=?', userId),
+      dbFirst(db, 'SELECT COUNT(*) AS n FROM market_price_history WHERE seller_id=?', userId),
+      dbFirst(db, 'SELECT COUNT(*) AS n FROM market_price_history WHERE buyer_id=?', userId),
+      dbFirst(db, 'SELECT COUNT(*) AS n FROM user_collection_rewards WHERE telegram_id=?', userId)
+    ]);
+    return json(res,200,{ok:true,stats:{uniqueItems:Number(uniqueItems?.n||0),totalFound:Number(totalFound?.n||0),currentItems:Number(currentItems?.n||0),blackBackgrounds:Number(blackBackgrounds?.n||0),crafts:Number(crafts?.n||0),sales:Number(sales?.n||0),purchases:Number(purchases?.n||0),seasons:Number(seasons?.n||0)}});
+  });
+
   // Public marketplace uses GiftCase's internal credits only; it never transfers Telegram Stars.
   app.get('/api/market/listings', async (req, res) => {
     const db = dbOf(req); const userId = String(req.user.telegram_id);
@@ -760,7 +793,7 @@ export function createApp(envProvider = () => ({})) {
     const db=dbOf(req); const buyerId=String(req.user.telegram_id); const listingId=String(req.params.listingId||'');
     let listing=null; let reserved=false; let debited=false; let transferred=false; let sellerPaid=false; let committed=false;
     try {
-      listing=await dbFirst(db,`SELECT ml.*,inv.item_id,inv.status AS inventory_status,ci.title FROM market_listings ml JOIN inventory inv ON inv.id=ml.inventory_id JOIN case_items ci ON ci.id=inv.item_id WHERE ml.id=?`,listingId);
+      listing=await dbFirst(db,`SELECT ml.*,inv.item_id,inv.status AS inventory_status,inv.background_key,inv.serial_number,ci.title FROM market_listings ml JOIN inventory inv ON inv.id=ml.inventory_id JOIN case_items ci ON ci.id=inv.item_id WHERE ml.id=?`,listingId);
       if(!listing||listing.status!=='active'||listing.inventory_status!=='listed') return fail(res,404,'Лот уже продан или снят с рынка');
       if(String(listing.seller_id)===buyerId) return fail(res,400,'Нельзя купить собственный лот');
       const reserve=await dbRun(db,`UPDATE market_listings SET status='processing' WHERE id=? AND status='active'`,listingId);
@@ -777,6 +810,12 @@ export function createApp(envProvider = () => ({})) {
       const finalized=await dbRun(db,`UPDATE market_listings SET status='sold',buyer_id=?,fee_credits=?,completed_at=? WHERE id=? AND status='processing'`,buyerId,fee,nowIso(),listingId);
       if((finalized.meta?.changes||0)===0) throw new Error('Не удалось завершить объявление');
       committed=true;
+      // Price history records completed sales only. A failed history write must not unwind a completed trade.
+      try {
+        await dbRun(db, `INSERT OR IGNORE INTO market_price_history(id,listing_id,item_id,inventory_id,background_key,serial_number,seller_id,buyer_id,price_credits,fee_credits,sold_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+          id(), listingId, listing.item_id, listing.inventory_id, listing.background_key || 'default', listing.serial_number ?? null,
+          String(listing.seller_id), buyerId, price, fee, nowIso());
+      } catch (historyError) { console.warn('Price history write failed:', historyError?.message || historyError); }
       // Keep sold items out of the seller's showcase; failure here must not undo a completed trade.
       await dbRun(db, 'DELETE FROM user_showcase_items WHERE telegram_id=? AND inventory_id=?', String(listing.seller_id), listing.inventory_id).catch(()=>{});
       return json(res,200,{ok:true,message:`Покупка успешна! «${listing.title}» теперь в твоём инвентаре.`,priceCredits:price,feeCredits:fee,sellerPayout});
@@ -979,10 +1018,7 @@ export function createApp(envProvider = () => ({})) {
         return await createOrderAndInvoice(req, res, type, null, 1, amount, `Баланс ${amount}`, `Пополнение внутреннего баланса приложения на ${amount} кредитов`);
       }
       if (type === 'premium_pass') {
-        const event = await dbFirst(db, 'SELECT enabled,event_type,premium_price_xtr,title FROM event_settings WHERE id=1');
-        if (!event?.enabled || event.event_type !== 'battle_pass' || (event.ends_at && new Date(event.ends_at).getTime() <= Date.now())) return fail(res, 409, 'Premium Pass сейчас недоступен');
-        if (req.user.premium_pass) return fail(res, 409, 'Premium Pass уже активирован');
-        return await createOrderAndInvoice(req, res, type, null, 1, Number(event.premium_price_xtr || PREMIUM_PASS_PRICE), 'Premium Pass', 'Premium ветка боевого пропуска NftGiftCase');
+        return fail(res, 409, 'Премиальный пропуск заменён картой сезонного события. Покупка Premium сейчас отключена.');
       }
       return fail(res, 400, 'Неизвестный тип платежа');
     } catch (err) { return fail(res, 500, err.message); }
@@ -1055,19 +1091,12 @@ export function createApp(envProvider = () => ({})) {
     const starRewards = await dbAll(db, `SELECT event_type,branch,level,amount FROM event_star_rewards ORDER BY event_type,branch,level`);
     const rewardMap = new Map(rewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
     const starRewardMap = new Map(starRewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
-    const adventDefaults = ['daily-teddy','daily-rocket','daily-perfume','daily-ring'];
-    const today = new Date();
-    const isAdventSeason = today.getUTCMonth() === 11;
-    const calendar = await Promise.all(Array.from({length:24}, async (_,i) => {
-      const day = i + 1;
-      const starReward = starRewardMap.get(`advent:advent:${day}`);
-      if (starReward) return { day, title:`${Number(starReward.amount).toLocaleString('ru-RU')} ★`, reward_type:'credits', amount:Number(starReward.amount), image_url:'gift-box.png', unlocked:isAdventSeason && day <= today.getUTCDate() };
-      const configured = rewardMap.get(`advent:advent:${day}`);
-      const itemId = configured?.item_id || adventDefaults[(day - 1) % adventDefaults.length];
-      const item = configured || await dbFirst(db, 'SELECT id AS item_id,title,image_url,kind,value_stars FROM case_items WHERE id=?', itemId);
-      return { day, title:item?.title || `Подарок ${day}`, reward_type:'gift', item_id:item?.item_id || itemId, image_url:item?.image_url || ['gift-box.png','nft-swan.png','rocket.png','perfume.png'][(day-1)%4], kind:item?.kind || 'gift', value_stars:item?.value_stars || 0, unlocked:isAdventSeason && day <= today.getUTCDate() };
-    }));
-    return json(res, 200, { ok:true, settings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, calendar, rewards, starRewards });
+    // The user-facing advent calendar and paid Halloween Pass are replaced by a single seasonal map.
+    const oldEventTitles = ['Halloween Pass','Адвент-календарь','Advent Calendar'];
+    const seasonMapSettings = { ...settings, event_type: 'season_map', title: oldEventTitles.includes(settings?.title) ? 'Halloween: Путь к сокровищу' : (settings?.title || 'Halloween: Путь к сокровищу') };
+    const seasonMapRewards = rewards.filter(r => r.event_type === 'battle_pass' && r.branch === 'free').map(r => ({ ...r, event_type:'season_map', branch:'free' }));
+    const seasonMapStarRewards = starRewards.filter(r => r.event_type === 'battle_pass' && r.branch === 'free').map(r => ({ ...r, event_type:'season_map', branch:'free' }));
+    return json(res, 200, { ok:true, settings:seasonMapSettings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, seasonMap: true, calendar:[], rewards:seasonMapRewards, starRewards:seasonMapStarRewards });
   });
 
   app.post('/api/event/quests/:questId/claim', async (req, res) => {
@@ -1083,10 +1112,10 @@ export function createApp(envProvider = () => ({})) {
 
   app.post('/api/event/levels/:level/claim', async (req, res) => {
     const db = dbOf(req); const telegramId = String(req.user.telegram_id);
-    const level = Math.trunc(Number(req.params.level)); const branch = req.body?.branch === 'premium' ? 'premium' : 'free';
+    const level = Math.trunc(Number(req.params.level)); const branch = 'free';
     if (!Number.isSafeInteger(level) || level < 1 || level > 30) return fail(res, 400, 'Уровень должен быть от 1 до 30');
     const event = await dbFirst(db, 'SELECT enabled,event_type,ends_at FROM event_settings WHERE id=1');
-    if (!event?.enabled || event.event_type !== 'battle_pass' || (event.ends_at && new Date(event.ends_at).getTime() <= Date.now())) return fail(res, 409, 'Battle Pass завершён или выключен');
+    if (!event?.enabled || !['battle_pass','advent'].includes(event.event_type) || (event.ends_at && new Date(event.ends_at).getTime() <= Date.now())) return fail(res, 409, 'Карта сезонного события завершена или выключена');
     const progress = await dbFirst(db, 'SELECT xp,premium_unlocked,claimed_free_levels,claimed_premium_levels FROM event_progress WHERE telegram_id=?', telegramId);
     if (Number(progress?.xp || 0) < level * 100) return fail(res, 409, 'Недостаточно XP для этого уровня');
     if (branch === 'premium' && !Number(progress?.premium_unlocked)) return fail(res, 403, 'Активируйте Premium Pass');
@@ -1244,8 +1273,13 @@ export function createApp(envProvider = () => ({})) {
       SUM(CASE WHEN sci.is_secret=1 THEN 1 ELSE 0 END) AS secret_count
       FROM seasonal_collections sc LEFT JOIN seasonal_collection_items sci ON sci.collection_id=sc.id
       GROUP BY sc.id ORDER BY sc.created_at DESC LIMIT 50`);
-    const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween Pass',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests, offers, broadcasts, auditLogs, collections });
+    const collectionsWithItems = await Promise.all(collections.map(async collection => ({
+      ...collection,
+      items: await dbAll(db, `SELECT sci.item_id,sci.is_secret,sci.is_required,ci.title,ci.image_url FROM seasonal_collection_items sci JOIN case_items ci ON ci.id=sci.item_id WHERE sci.collection_id=? ORDER BY sci.is_required DESC,sci.is_secret,ci.title`, collection.id)
+    })));
+    const rawEvent = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween: Путь к сокровищу',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
+    const event = { ...rawEvent, event_type:'season_map', title: ['Halloween Pass','Адвент-календарь','Advent Calendar'].includes(rawEvent.title) ? 'Halloween: Путь к сокровищу' : (rawEvent.title || 'Halloween: Путь к сокровищу') };
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests, offers, broadcasts, auditLogs, collections:collectionsWithItems });
   });
 
   // Admin creator for seasonal collections; secret items are optional and remain hidden until collected.
@@ -1273,6 +1307,24 @@ export function createApp(envProvider = () => ({})) {
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,collectionId,title,description,imageUrl,startsAt,endsAt,rewardTitle,frameKey,active,String(req.user?.telegram_id||''),nowIso(),nowIso());
     for(const itemId of itemIds) await dbRun(db,`INSERT INTO seasonal_collection_items(collection_id,item_id,is_secret,is_required) VALUES(?,?,?,?)`,collectionId,itemId,itemId===secretItemId?1:0,itemId===secretItemId?0:1);
     return json(res,200,{ok:true,collection:{id:collectionId,title,description,image_url:imageUrl,starts_at:startsAt,ends_at:endsAt,reward_title:rewardTitle,reward_frame_key:frameKey,active,item_count:itemIds.length,secret_count:secretItemId?1:0},message:'Сезонная коллекция создана'});
+  });
+
+  app.patch('/api/admin/collections/:collectionId/items', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const collectionId=String(req.params.collectionId||'');
+    const collection=await dbFirst(db,'SELECT id FROM seasonal_collections WHERE id=?',collectionId);
+    if(!collection) return fail(res,404,'Сезонная коллекция не найдена');
+    const itemIds=Array.isArray(req.body?.itemIds)?[...new Set(req.body.itemIds.map(v=>String(v||'').trim()).filter(Boolean))]:[];
+    const secretItemId=String(req.body?.secretItemId||'').trim();
+    if(itemIds.length<2||itemIds.length>20) return fail(res,400,'Нужно выбрать от 2 до 20 предметов');
+    if(secretItemId&&!itemIds.includes(secretItemId)) return fail(res,400,'Секретный предмет должен входить в список');
+    if(itemIds.filter(v=>v!==secretItemId).length<2) return fail(res,400,'Нужно минимум 2 обязательных предмета, помимо секретного');
+    const found=await dbAll(db,`SELECT id FROM case_items WHERE id IN (${itemIds.map(()=>'?').join(',')})`,...itemIds);
+    if(found.length!==itemIds.length) return fail(res,400,'Один или несколько подарков отсутствуют в каталоге');
+    const replacementStatements=[db.prepare('DELETE FROM seasonal_collection_items WHERE collection_id=?').bind(collectionId)];
+    for(const itemId of itemIds) replacementStatements.push(db.prepare('INSERT INTO seasonal_collection_items(collection_id,item_id,is_secret,is_required) VALUES(?,?,?,?)').bind(collectionId,itemId,itemId===secretItemId?1:0,itemId===secretItemId?0:1));
+    replacementStatements.push(db.prepare('UPDATE seasonal_collections SET updated_at=? WHERE id=?').bind(nowIso(),collectionId));
+    await db.batch(replacementStatements);
+    return json(res,200,{ok:true,message:'Состав коллекции обновлён',itemCount:itemIds.length,secretItemId:secretItemId||null});
   });
 
   app.patch('/api/admin/collections/:collectionId/status', requireAdmin, async (req,res)=>{
@@ -1544,8 +1596,9 @@ export function createApp(envProvider = () => ({})) {
     const db = dbOf(req);
     try {
       const enabled = req.body?.enabled ? 1 : 0;
-      const eventType = req.body?.eventType === 'advent' ? 'advent' : 'battle_pass';
-      const title = String(req.body?.title || (eventType === 'advent' ? 'Адвент-календарь' : 'Halloween Pass')).trim().slice(0, 80);
+      // 'season_map' is the new UI name; keep the legacy battle_pass storage key to remain compatible with existing D1 CHECK constraints.
+      const eventType = 'battle_pass';
+      const title = String(req.body?.title || 'Halloween: Путь к сокровищу').trim().slice(0, 80);
       const rawEnd = req.body?.endsAt;
       const endDate = rawEnd ? new Date(rawEnd) : null;
       if (rawEnd && (!endDate || !Number.isFinite(endDate.getTime()))) return fail(res, 400, 'Проверь дату окончания события');
@@ -1610,15 +1663,13 @@ export function createApp(envProvider = () => ({})) {
 
   app.post('/api/admin/event/rewards', requireAdmin, async (req, res) => {
     const db = dbOf(req);
-    const eventType = req.body?.eventType === 'advent' ? 'advent' : 'battle_pass';
-    const branch = String(req.body?.branch || 'free');
-    const level = adminInteger(req.body?.level, 1, eventType === 'advent' ? 24 : 30);
+    const eventType = 'battle_pass';
+    const branch = 'free';
+    const level = adminInteger(req.body?.level, 1, 30);
     const rewardType = req.body?.rewardType === 'credits' ? 'credits' : 'gift';
     const amount = rewardType === 'credits' ? adminInteger(req.body?.amount, 1, 1000000) : null;
     const itemId = String(req.body?.itemId || '').trim();
-    const validBranch = eventType === 'advent' ? branch === 'advent' : ['free','premium'].includes(branch);
-    if (!validBranch) return fail(res, 400, 'Неверная ветка наград для выбранного события');
-    if (level === null) return fail(res, 400, eventType === 'advent' ? 'День должен быть от 1 до 24' : 'Уровень должен быть от 1 до 30');
+    if (level === null) return fail(res, 400, 'Узел карты должен быть от 1 до 30');
     if (rewardType === 'credits') {
       if (amount === null) return fail(res, 400, 'Количество внутренних кредитов должно быть от 1 до 1 000 000');
       await dbRun(db, 'DELETE FROM event_rewards WHERE event_type=? AND branch=? AND level=?', eventType, branch, level);

@@ -48,7 +48,7 @@
     { id: 2, username: 'mira', item_title: 'Pink Swan', image_url: 'nft-swan.png', value_stars: 60 },
     { id: 3, username: 'denis', item_title: 'Carbon Rifle', image_url: 'rifle.png', value_stars: 90 },
   ];
-  const mockEvent = { enabled: true, event_type: 'battle_pass', title: 'Halloween Pass', ends_at: '2026-11-01T00:00:00Z', premium_price_xtr: 666 };
+  const mockEvent = { enabled: true, event_type: 'season_map', title: 'Halloween: Путь к сокровищу', ends_at: '2026-11-07T00:00:00Z', premium_price_xtr: 666 };
   const demoLevels = Array.from({ length: 30 }, (_, i) => ({ level: i + 1, rewardXp: 100, image_url: ['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i % 5], free: true, premium: i === 29 }));
 
   function esc(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
@@ -572,7 +572,7 @@
   }
   function renderMarket() {
     const listings=S.marketListings||[];
-    $('#market-grid').innerHTML=listings.map(item=>`<article class="market-card ${backgroundClass(item)}"><div class="market-item-art"><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span class="market-serial">#${esc(item.serial_number||'—')}</span></div><div class="market-card-body"><span class="inventory-tag">${esc(itemKind(item))}</span><h3>${esc(item.title)}</h3><p class="item-traits">${esc(backgroundLabel(item.background_key))}</p><p class="market-seller">Продавец: ${esc(item.seller_username?'@'+item.seller_username:item.seller_first_name||'Игрок')}</p><div class="market-price-row"><strong>${Number(item.price_credits).toLocaleString('ru-RU')} ★</strong>${String(item.seller_id)===String(S.user?.telegram_id)?'<button class="secondary-btn" data-cancel-market="'+esc(item.id)+'">Снять</button>':'<button class="small-primary" data-buy-market="'+esc(item.id)+'">Купить</button>'}</div><button class="text-btn market-profile-link" data-view-showcase="${esc(item.seller_id)}">Витрина игрока →</button></div></article>`).join('');
+    $('#market-grid').innerHTML=listings.map(item=>`<article class="market-card ${backgroundClass(item)}"><div class="market-item-art"><img loading="lazy" src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span class="market-serial">#${esc(item.serial_number||'—')}</span></div><div class="market-card-body"><span class="inventory-tag">${esc(itemKind(item))}</span><h3>${esc(item.title)}</h3><p class="item-traits">${esc(backgroundLabel(item.background_key))}</p><p class="market-seller">Продавец: ${esc(item.seller_username?'@'+item.seller_username:item.seller_first_name||'Игрок')}</p><div class="market-price-row"><strong>${Number(item.price_credits).toLocaleString('ru-RU')} ★</strong>${String(item.seller_id)===String(S.user?.telegram_id)?'<button class="secondary-btn" data-cancel-market="'+esc(item.id)+'">Снять</button>':'<button class="small-primary" data-buy-market="'+esc(item.id)+'">Купить</button>'}</div><div class="market-card-links"><button class="text-btn market-profile-link" data-view-showcase="${esc(item.seller_id)}">Витрина →</button><button class="text-btn market-profile-link" data-price-history="${esc(item.item_id)}" data-history-background="${esc(item.background_key||'default')}">История цен ↗</button></div></div></article>`).join('');
     $('#market-empty').classList.toggle('hidden',listings.length>0);
     const mine=S.myMarketListings||[];
     $('#market-my-listings').innerHTML=mine.length?mine.map(item=>`<div class="admin-order"><span><b>${esc(item.title)}</b><br/><small>${Number(item.price_credits).toLocaleString('ru-RU')} ★ · ${esc(item.status==='processing'?'Покупается':'Активен')}</small></span>${item.status==='active'?`<button class="secondary-btn" data-cancel-market="${esc(item.id)}">Снять лот</button>`:'<span class="muted-note">В обработке</span>'}</div>`).join(''):'<p class="muted-note">У тебя пока нет активных объявлений.</p>';
@@ -610,13 +610,89 @@
     } else selected=selected.filter(id=>id!==String(inventoryId));
     S.craftSelected=selected;renderCraft();
   }
+  const wait = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+  function showCraftAnimation(materials) {
+    const overlay=$('#craft-animation-overlay');
+    const host=$('#craft-ritual-items');
+    $('#craft-ritual-phase').textContent='Пробуждаем атрибуты';
+    $('#craft-ritual-caption').textContent='Каждый предмет оставляет свой след';
+    $('#craft-ritual-serial').textContent='#????';
+    $('#craft-ritual-core').classList.remove('hidden','is-revealed');
+    $('#craft-ritual-result').classList.add('hidden');
+    host.innerHTML=materials.map((item,i)=>`<div class="craft-orbit-item orbit-${i+1}" style="--orbit-index:${i}"><img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><span>${esc(backgroundLabel(item.background_key))}</span></div>`).join('');
+    overlay.classList.remove('hidden','is-success','is-failed');
+    requestAnimationFrame(()=>overlay.classList.add('is-active'));
+  }
+  function revealCraftAnimation(item) {
+    $('#craft-ritual-phase').textContent='НОВЫЙ ЭКЗЕМПЛЯР СОЗДАН';
+    $('#craft-ritual-caption').textContent=`${backgroundLabel(item.background_key||item.background)} · ${backgroundLabel(item.background_key||item.background)==='Чёрный · самый редкий'?'ЛЕГЕНДАРНАЯ НАХОДКА':'АТРИБУТ ЗАКРЕПЛЁН'}`;
+    $('#craft-ritual-serial').textContent=`#${item.serial_number||item.serialNumber||'—'}`;
+    $('#craft-ritual-core').classList.add('hidden');
+    const result=$('#craft-ritual-result');
+    result.innerHTML=`<img src="${imageSrc(item.image_url)}" alt="${esc(item.title)}"/><strong>${esc(item.title)}</strong><span>${esc(backgroundLabel(item.background_key||item.background))}</span>`;
+    result.classList.remove('hidden');
+    $('#craft-animation-overlay').classList.add('is-success');
+  }
+  function closeCraftAnimation() {
+    const overlay=$('#craft-animation-overlay');overlay.classList.remove('is-active');
+    window.setTimeout(()=>{overlay.classList.add('hidden');overlay.classList.remove('is-success','is-failed');},420);
+  }
   async function performCraft() {
     const ids=S.craftSelected||[];if(ids.length<2||ids.length>4)return toast('Выбери от 2 до 4 одинаковых предметов','error');
     if(MOCK)return toast('Крафт работает только с подключённым сервером и сохранённым инвентарём','error',5000);
     const button=$('#craft-run-btn');button.disabled=true;
-    try{const result=await api('/api/craft',{method:'POST',body:{inventoryIds:ids}});S.craftSelected=[];toast(result.message||'Крафт завершён','success',5500);await refreshUserData();renderCraft();}
-    catch(err){toast(err.message,'error',5500);}finally{button.disabled=false;renderCraft();}
+    const materials=(S.inventory||[]).filter(item=>ids.includes(String(item.inventory_id)));
+    showCraftAnimation(materials);
+    let answer=null;let problem=null;
+    const pending=api('/api/craft',{method:'POST',body:{inventoryIds:ids}}).then(value=>{answer=value;}).catch(err=>{problem=err;});
+    try{
+      await wait(2600);
+      await pending;
+      if(problem) throw problem;
+      $('#craft-ritual-phase').textContent='Атрибуты объединяются…';
+      await wait(650);
+      revealCraftAnimation(answer.item||{});
+      S.craftSelected=[];
+      await wait(1800);
+      closeCraftAnimation();
+      toast(answer.message||'Крафт завершён','success',5500);
+      await refreshUserData();renderCraft();
+    }catch(err){
+      $('#craft-ritual-phase').textContent='Слияние прервано';
+      $('#craft-ritual-caption').textContent='Предметы не были потрачены, если сервер отклонил операцию.';
+      $('#craft-animation-overlay').classList.add('is-failed');
+      $('#craft-ritual-core').classList.remove('hidden');$('#craft-ritual-core').innerHTML='<span>!</span>';
+      await wait(850);closeCraftAnimation();toast(err.message,'error',5500);
+    }finally{button.disabled=false;renderCraft();}
   }
+  function renderPriceChart(history) {
+    if(!history.length) return '<div class="price-history-empty"><span>◌</span><strong>Пока нет завершённых сделок</strong><small>График появится после реальных покупок на рынке.</small></div>';
+    const vals=history.map(x=>Number(x.price_credits));const min=Math.min(...vals),max=Math.max(...vals);const span=Math.max(1,max-min);
+    const points=vals.map((v,i)=>({x:12+(history.length===1?148:i*(296/(history.length-1))),y:82-((v-min)/span)*62}));
+    const path=points.map((p,i)=>`${i?'L':'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const dots=points.map((p,i)=>`<circle cx="${p.x}" cy="${p.y}" r="3" fill="#ffe29a"><title>${vals[i].toLocaleString('ru-RU')} кредитов</title></circle>`).join('');
+    return `<svg class="price-chart-svg" viewBox="0 0 320 100" role="img" aria-label="История цен по завершённым сделкам"><defs><linearGradient id="priceChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd76a" stop-opacity=".28"/><stop offset="1" stop-color="#ffd76a" stop-opacity="0"/></linearGradient></defs><path d="M ${points[0].x} 94 ${points.map(p=>`L ${p.x} ${p.y}`).join(' ')} L ${points[points.length-1].x} 94 Z" fill="url(#priceChartFill)"/><path d="${path}" fill="none" stroke="#ffd76a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}</svg>`;
+  }
+  async function showPriceHistory(itemId, background='default') {
+    if(MOCK)return toast('История цен появится в подключённой версии после первых сделок.','info');
+    openModal('<h2 class="modal-title" id="modal-title">История цен</h2><p class="modal-copy">Загружаем реальные сделки…</p>');
+    try{
+      const data=await api(`/api/market/price-history/${encodeURIComponent(itemId)}?background=${encodeURIComponent(background)}`);
+      const summary=data.summary||{};const rows=data.history||[];
+      const list=rows.slice(-8).reverse().map(row=>`<div class="price-history-row"><span>${esc(new Date(row.sold_at).toLocaleDateString('ru-RU',{day:'2-digit',month:'short'}))}<small>${esc(new Date(row.sold_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}))}</small></span><b>${Number(row.price_credits).toLocaleString('ru-RU')} ★</b></div>`).join('');
+      $('#modal-content').innerHTML=`<h2 class="modal-title" id="modal-title">История цен</h2><div class="price-history-heading"><img src="${imageSrc(data.item.image_url)}" alt="${esc(data.item.title)}"/><div><strong>${esc(data.item.title)}</strong><small>${esc(backgroundLabel(background))} · по завершённым сделкам</small></div></div><div class="price-history-stats"><div><small>Средняя</small><strong>${summary.count?Number(summary.average).toLocaleString('ru-RU')+' ★':'—'}</strong></div><div><small>Минимум</small><strong>${summary.count?Number(summary.min).toLocaleString('ru-RU')+' ★':'—'}</strong></div><div><small>Максимум</small><strong>${summary.count?Number(summary.max).toLocaleString('ru-RU')+' ★':'—'}</strong></div></div>${renderPriceChart(rows)}<div class="price-history-title">Последние сделки · ${Number(summary.count||0)}</div><div class="price-history-list">${list||'<p class="muted-note">Реальных продаж этого варианта пока нет.</p>'}</div>`;
+    }catch(err){$('#modal-content').innerHTML=`<h2 class="modal-title" id="modal-title">История цен</h2><p class="modal-copy">Не удалось загрузить историю: ${esc(err.message)}</p>`;}
+  }
+  async function showCollectorCodex() {
+    if(MOCK){openModal(`<h2 class="modal-title" id="modal-title">📖 Кодекс коллекционера</h2><p class="modal-copy">В полной версии здесь появится история твоих находок, крафтов, редких фонов и сделок.</p>`);return;}
+    openModal('<h2 class="modal-title" id="modal-title">📖 Кодекс коллекционера</h2><p class="modal-copy">Собираем историю твоих находок…</p>');
+    try{
+      const {stats}=await api('/api/collector/codex');
+      const metrics=[['Найдено типов',stats.uniqueItems],['Все экземпляры',stats.totalFound],['Сейчас в коллекции',stats.currentItems],['Чёрные фоны',stats.blackBackgrounds],['Успешные крафты',stats.crafts],['Продажи на рынке',stats.sales],['Покупки на рынке',stats.purchases],['Завершённые сезоны',stats.seasons]];
+      $('#modal-content').innerHTML=`<h2 class="modal-title" id="modal-title">📖 Кодекс коллекционера</h2><p class="modal-copy">Личная летопись GiftCase. Здесь учитываются только реальные предметы и завершённые действия.</p><div class="codex-stats-grid">${metrics.map(([name,value],i)=>`<div class="codex-stat"><span>${['💎','🎁','🧺','🖤','🛠️','💱','🛍️','🏆'][i]}</span><strong>${Number(value||0).toLocaleString('ru-RU')}</strong><small>${esc(name)}</small></div>`).join('')}</div><div class="codex-footnote">История сохраняется между сессиями и не обнуляется при завершении сезона.</div>`;
+    }catch(err){$('#modal-content').innerHTML=`<h2 class="modal-title" id="modal-title">Кодекс коллекционера</h2><p class="modal-copy">Не удалось загрузить статистику: ${esc(err.message)}</p>`;}
+  }
+
   async function loadCollections() {
     if(MOCK){S.collections=[];renderCollections();return;}
     try{const result=await api('/api/collections');S.collections=result.collections||[];renderCollections();}
@@ -735,35 +811,34 @@
     return (S.eventData?.starRewards || []).find(r => r.event_type === eventType && r.branch === branch && Number(r.level) === Number(level));
   }
   function renderEvent() {
-    const data=S.eventData||{}; const settings=data.settings||data.event||mockEvent;
-    const beforeEnd = !settings.ends_at || new Date(settings.ends_at).getTime() > Date.now();
-    const enabled=(Boolean(Number(settings.enabled) || settings.enabled===true)) && beforeEnd;
-    $('#event-title').textContent=enabled?(settings.title||'Event'): 'Event Soon';
-    $('#event-nav-label').textContent=enabled?(settings.event_type==='advent'?'Адвент':'Event Pass'):'Event Soon';
+    const data=S.eventData||{};const settings=data.settings||data.event||mockEvent;
+    const beforeEnd=!settings.ends_at||new Date(settings.ends_at).getTime()>Date.now();
+    const enabled=(Boolean(Number(settings.enabled)||settings.enabled===true))&&beforeEnd;
+    $('#event-title').textContent=enabled?(settings.title||'Карта сезона'):'Карта сезона';
+    $('#event-nav-label').textContent=enabled?'Карта сезона':'Скоро';
     $('#event-status').textContent=enabled?'АКТИВЕН':'СКОРО';
-    $('#event-soon').classList.toggle('hidden',enabled);$('#battle-pass-content').classList.toggle('hidden',!enabled||settings.event_type==='advent');$('#advent-content').classList.toggle('hidden',!enabled||settings.event_type!=='advent');
-    $('#pass-name').textContent=settings.title||'Halloween Pass';$('#premium-pass-btn').textContent=`Открыть Premium за ${settings.premium_price_xtr||666} Stars`;
-    const progress=data.progress||{xp:0,premium_unlocked:0};$('#pass-xp-value').textContent=`${Number(progress.xp||0)} XP`;
-    const currentLevel=Math.min(30,Math.floor(Number(progress.xp||0)/100)+1);$('#pass-xp-label').textContent=`Уровень ${currentLevel} из 30`;
-    const freeClaimed=JSON.parse(progress.claimed_free_levels||'[]');const premiumClaimed=JSON.parse(progress.claimed_premium_levels||'[]');
-    const levels=$('#pass-levels'); levels.innerHTML=Array.from({length:30},(_,i)=>{
-      const level=i+1; const unlocked=Number(progress.xp||0)>=level*100;
-      const freeDone=freeClaimed.includes(level); const premiumDone=premiumClaimed.includes(level);
-      const freeConfigured=customEventReward('battle_pass','free',level);
-      const premiumConfigured=customEventReward('battle_pass','premium',level);
-      const freeStars=customEventStarReward('battle_pass','free',level);
-      const premiumStars=customEventStarReward('battle_pass','premium',level);
-      const freeFallback=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i%5];
-      const premiumFallback=level===30?'nft-swan.png':['nft-swan.png','ring.png','rocket.png','perfume.png'][i%4];
-      const freeImage=freeConfigured?.image_url?imageSrc(freeConfigured.image_url):asset(freeFallback);
-      const premiumImage=premiumConfigured?.image_url?imageSrc(premiumConfigured.image_url):asset(premiumFallback);
-      const freeRewardMarkup=freeStars?`<div class="event-credit-reward"><span>★</span><strong>+${Number(freeStars.amount).toLocaleString('ru-RU')}</strong><small>кредитов</small></div>`:`<img loading="lazy" src="${freeImage}" alt="${esc(freeConfigured?.title || `Бесплатная награда ${level}`)}"/>`;
-      const premiumRewardMarkup=premiumStars?`<div class="event-credit-reward premium-credit-reward"><span>★</span><strong>+${Number(premiumStars.amount).toLocaleString('ru-RU')}</strong><small>кредитов</small></div>`:`<img loading="lazy" src="${premiumImage}" alt="${esc(premiumConfigured?.title || `Premium награда ${level}`)}"/>`;
-      const premiumReady=Number(progress.premium_unlocked||0)===1;
-      return `<article class="level-card ${unlocked?'':'locked'}"><span class="level-number">LEVEL ${String(level).padStart(2,'0')}</span><strong>Уровень ${level}</strong><div class="level-rewards"><div class="level-branch free-branch"><small>FREE · ${level*100} XP</small>${freeRewardMarkup}<button data-claim-level="${level}" data-branch="free" ${!unlocked||freeDone?'disabled':''}>${freeDone?'Получено':unlocked?'Забрать':'Закрыто'}</button></div><div class="level-branch premium-branch"><small>${level===30?'RARE NFT':'PREMIUM'}</small>${premiumRewardMarkup}<button data-claim-level="${level}" data-branch="premium" ${!unlocked||!premiumReady||premiumDone?'disabled':''}>${premiumDone?'Получено':!premiumReady?'Premium':unlocked?'Забрать':'Закрыто'}</button></div></div></article>`
-    }).join('');
-    const quests=data.quests||[];$('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
-    const calendar=data.calendar||[];$('#advent-grid').innerHTML=calendar.map(d=>`<button class="advent-cell ${d.unlocked?'':'locked'}" data-advent-day="${d.day}" ${d.unlocked?'':'disabled'}><strong>${d.day}</strong>${d.reward_type==='credits'?`<span class="advent-credit-reward">★<b>+${Number(d.amount||0).toLocaleString('ru-RU')}</b></span>`:`<img src="${imageSrc(d.image_url)}" alt="Подарок дня ${d.day}" />`}</button>`).join('');
+    $('#event-soon').classList.toggle('hidden',enabled);
+    $('#season-map-content').classList.toggle('hidden',!enabled);
+    const progress=data.progress||{xp:0,claimed_free_levels:'[]'};const xp=Number(progress.xp||0);const level=Math.min(30,Math.floor(xp/100)+1);
+    $('#season-map-name').textContent=settings.title||'Halloween: Путь к сокровищу';
+    $('#pass-xp-value').textContent=`${xp.toLocaleString('ru-RU')} XP`;
+    $('#pass-xp-label').textContent=`Узел ${Math.min(30,Math.floor(xp/100)+1)} из 30`;
+    $('#season-map-progress-fill').style.width=`${Math.min(100,xp/3000*100)}%`;
+    let claimed=[];try{claimed=JSON.parse(progress.claimed_free_levels||'[]');if(!Array.isArray(claimed))claimed=[];}catch{claimed=[];}
+    const eventType='season_map';
+    const nodes=Array.from({length:30},(_,i)=>{
+      const number=i+1,unlocked=xp>=number*100,done=claimed.includes(number);
+      const configured=customEventReward(eventType,'free',number);const credits=customEventStarReward(eventType,'free',number);
+      const fallback=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png','case-halloween.png'][i%6];
+      const visual=credits?`<div class="season-map-credit"><span>★</span><b>+${Number(credits.amount).toLocaleString('ru-RU')}</b></div>`:`<img loading="lazy" src="${configured?.image_url?imageSrc(configured.image_url):asset(number===30?'case-halloween.png':fallback)}" alt="${esc(configured?.title||`Награда узла ${number}`)}"/>`;
+      const title=credits?`${Number(credits.amount).toLocaleString('ru-RU')} кредитов`:configured?.title||(['Набор','Ракета','Парфюм','Кольцо','Коллекционный подарок'][i%5]);
+      const state=done?'completed':unlocked?'unlocked':'locked';
+      const action=done?'Забрано':unlocked?'Забрать':`${number*100} XP`;
+      return `<div class="season-map-stop ${state} ${number%5===0?'season-map-milestone':''}"><span class="season-map-stop-connector" aria-hidden="true"></span><article class="season-map-node-card"><div class="season-map-node-top"><span>${number===30?'✧ СЕКРЕТНЫЙ ФИНАЛ':number%5===0?'✦ МИЛСТОУН':'УЗЕЛ '+String(number).padStart(2,'0')}</span><strong>${done?'✓':unlocked?'●':'🔒'}</strong></div><div class="season-map-node-art">${visual}</div><div class="season-map-node-title">${esc(title)}</div><small>${number*100} XP</small><button class="${done?'secondary-btn':'small-primary'}" data-claim-level="${number}" data-branch="free" ${!unlocked||done?'disabled':''}>${action}</button></article></div>`;
+    });
+    $('#season-map-path').innerHTML=nodes.join('');
+    const quests=data.quests||[];
+    $('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
   }
   async function claimLevel(level, branch='free') {
     if(MOCK) { const p=S.eventData.progress;p.xp=Number(p.xp||0);const needed=level*100;if(p.xp<needed)return toast('Недостаточно XP для этой награды','error');if(branch==='premium'&&!p.premium_unlocked)return toast('Сначала активируйте Premium Pass','error');toast(`DEMO: награда уровня ${level} доступна в полной версии`,'success');return renderEvent(); }
@@ -1025,7 +1100,24 @@
   }
   function renderAdminSeasons(collections=[]) {
     const host=$('#admin-season-list');if(!host)return;
-    host.innerHTML=collections.length?collections.map(c=>`<div class="admin-order"><span><b>${esc(c.title)}</b><br/><small>${Number(c.item_count||0)} предметов · ${esc(c.reward_title||'Коллекционер')} · до ${esc(new Date(c.ends_at).toLocaleDateString('ru-RU'))}</small></span><button class="secondary-btn" data-admin-season-toggle="${esc(c.id)}" data-active="${Number(c.active)?'1':'0'}">${Number(c.active)?'Отключить':'Включить'}</button></div>`).join(''):'<p class="muted-note">Сезонных коллекций пока нет.</p>';
+    host.innerHTML=collections.length?collections.map(c=>`<div class="admin-order admin-season-row"><span><b>${esc(c.title)}</b><br/><small>${Number(c.item_count||0)} предметов · ${esc(c.reward_title||'Коллекционер')} · до ${esc(new Date(c.ends_at).toLocaleDateString('ru-RU'))}</small></span><div class="admin-season-row-actions"><button class="secondary-btn" data-admin-season-items-edit="${esc(c.id)}">Заменить подарки</button><button class="secondary-btn" data-admin-season-toggle="${esc(c.id)}" data-active="${Number(c.active)?'1':'0'}">${Number(c.active)?'Отключить':'Включить'}</button></div></div>`).join(''):'<p class="muted-note">Сезонных коллекций пока нет.</p>';
+  }
+  function showAdminSeasonItemsEditor(collectionId) {
+    const collection=(S.adminOverview?.collections||[]).find(c=>String(c.id)===String(collectionId));
+    const catalog=S.adminOverview?.rewardCatalog||[];if(!collection||!catalog.length)return toast('Не удалось загрузить состав коллекции','error');
+    const items=collection.items||[];const current=new Set(items.map(item=>String(item.item_id)));const secret=items.find(item=>Number(item.is_secret)===1)?.item_id||'';
+    const options=catalog.map(item=>`<label class="admin-season-edit-choice"><input type="checkbox" data-season-edit-item value="${esc(item.id)}" ${current.has(String(item.id))?'checked':''}/><img src="${imageSrc(item.image_url)}" alt=""/><span><b>${esc(item.title)}</b><small>${esc(money(item.value_stars))}</small></span></label>`).join('');
+    const secretOptions=`<option value="">Без секретного предмета</option>`+catalog.map(item=>`<option value="${esc(item.id)}" ${String(secret)===String(item.id)?'selected':''}>${esc(item.title)}</option>`).join('');
+    openModal(`<h2 class="modal-title" id="modal-title">Заменить подарки</h2><p class="modal-copy"><b>${esc(collection.title)}</b><br/>Отметь обязательные подарки и выбери необязательную секретную находку.</p><div class="admin-season-edit-grid">${options}</div><label>Секретный необязательный подарок<select id="admin-edit-season-secret">${secretOptions}</select></label><p class="muted-note">Нужно минимум 2 обязательных предмета, плюс секретный при необходимости. Прогресс игроков пересчитается по новому составу.</p><div class="modal-actions"><button class="secondary-btn" data-close-modal>Отмена</button><button class="primary-btn" data-admin-season-items-save="${esc(collectionId)}">Сохранить состав</button></div>`);
+  }
+  async function saveAdminSeasonItems(collectionId) {
+    const itemIds=$$('[data-season-edit-item]:checked').map(input=>input.value);const secretItemId=$('#admin-edit-season-secret')?.value||'';
+    if(itemIds.length<2)return toast('Выбери минимум два подарка','error');
+    if(secretItemId&&!itemIds.includes(secretItemId))return toast('Секретный подарок должен входить в выбранный список','error');
+    if(MOCK)return toast('DEMO: состав коллекции не сохраняется','error');
+    const button=$(`[data-admin-season-items-save="${CSS.escape(String(collectionId))}"]`);if(button)button.disabled=true;
+    try{const result=await api(`/api/admin/collections/${encodeURIComponent(collectionId)}/items`,{method:'PATCH',body:{itemIds,secretItemId}});closeModal();toast(result.message||'Состав коллекции обновлён','success');await loadAdmin();await loadCollections();}
+    catch(err){toast(err.message,'error',5000);}finally{if(button)button.disabled=false;}
   }
   async function adminSaveSeason() {
     if(!S.isAdmin)return toast('Доступ запрещён','error');
@@ -1057,7 +1149,7 @@
       fillAdminCase();
       resetOfferEditor(); renderAdminOffers([]); renderAdminBroadcasts([]); renderAdminAudit([]); fillAdminSeasonSelectors(); renderAdminSeasons([]); resetSeasonEditor();
       $('#admin-orders').textContent='DEMO: заказы не создаются. Изменения в демо не сохраняются в базе.';
-      $('#admin-event-enabled').checked=true;$('#admin-event-type').value='battle_pass';$('#admin-event-title').value='Halloween Pass';
+      $('#admin-event-enabled').checked=true;$('#admin-event-type').value='season_map';$('#admin-event-title').value='Halloween: Путь к сокровищу';
       return;
     }
     try {
@@ -1067,7 +1159,7 @@
       $('#admin-case-select').innerHTML=cases.map(c=>`<option value="${esc(c.id)}">${esc(c.title)}${Number(c.active)?'':' · выкл.'}</option>`).join('');
       if (selected && cases.some(c=>c.id===selected)) $('#admin-case-select').value=selected;
       fillAdminCase();
-      $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value=result.event.event_type;$('#admin-event-title').value=result.event.title;$('#admin-event-price').value=result.event.premium_price_xtr;$('#admin-event-end').value=toLocalDateTimeInput(result.event.ends_at);
+      $('#admin-event-enabled').checked=Boolean(result.event.enabled);$('#admin-event-type').value='season_map';$('#admin-event-title').value=result.event.title||'Halloween: Путь к сокровищу';$('#admin-event-price').value=666;$('#admin-event-end').value=toLocalDateTimeInput(result.event.ends_at);
       try { const gd=await api('/api/global-display'); S.globalDisplay=gd.settings; const v=gd.settings||{};$('#admin-message-enabled').checked=Boolean(Number(v.message_enabled));$('#admin-message-title').value=v.message_title||'Новости NftGiftCase';$('#admin-message-body').value=v.message_body||'';$('#admin-timer-enabled').checked=Boolean(Number(v.timer_enabled));$('#admin-timer-title').value=v.timer_title||'До завершения события';$('#admin-timer-end').value=toLocalDateTimeInput(v.timer_ends_at);renderGlobalDisplay(); } catch(err) { console.warn('Cannot load global display settings:',err.message); }
       syncEventRewardBranch();
       fillGlobalRewardSelector();
@@ -1241,13 +1333,10 @@
     syncEventRewardEditor();
   }
   function syncEventRewardBranch() {
-    const type=$('#admin-reward-event-type')?.value||'battle_pass';
     const branch=$('#admin-reward-branch');const level=$('#admin-reward-level');const label=$('#admin-reward-level-label');
-    if(type==='advent'){
-      branch.innerHTML='<option value="advent">Награда календаря</option>';branch.value='advent';level.max='24';level.value=String(Math.min(24,Math.max(1,Number(level.value)||1)));label.firstChild.textContent='День календаря (1–24)';
-    }else{
-      const old=branch.value==='advent'?'free':branch.value;branch.innerHTML='<option value="free">FREE — бесплатная</option><option value="premium">PREMIUM</option>';branch.value=['free','premium'].includes(old)?old:'free';level.max='30';level.value=String(Math.min(30,Math.max(1,Number(level.value)||1)));label.firstChild.textContent='Уровень (1–30)';
-    }
+    if(branch)branch.value='free';
+    if(level){level.max='30';level.value=String(Math.min(30,Math.max(1,Number(level.value)||1)));}
+    if(label)label.firstChild.textContent='Узел карты (1–30)';
     syncEventRewardEditor();
   }
   function syncEventRewardEditor() {
@@ -1328,6 +1417,10 @@
     if(target.matches('[data-claim-collection]')) {claimSeasonCollection(target.dataset.claimCollection);return;}
     if(target.id==='showcase-save-btn') {saveShowcase();return;}
     if(target.matches('[data-view-showcase]')) {openPlayerShowcase(target.dataset.viewShowcase);return;}
+    if(target.matches('[data-price-history]')) {showPriceHistory(target.dataset.priceHistory,target.dataset.historyBackground||'default');return;}
+    if(target.id==='collector-codex-btn') {showCollectorCodex();return;}
+    if(target.matches('[data-admin-season-items-edit]')) {showAdminSeasonItemsEditor(target.dataset.adminSeasonItemsEdit);return;}
+    if(target.matches('[data-admin-season-items-save]')) {saveAdminSeasonItems(target.dataset.adminSeasonItemsSave);return;}
     if(target.matches('[data-confirm-withdraw]')) {withdraw(target.dataset.confirmWithdraw);return;}
     if(target.matches('[data-check-global-subscription]')) {checkGlobalSubscription();return;}
     if(target.id==='admin-shortcut'||target.id==='admin-shortcut-wrap') {setView('admin');return;}
@@ -1343,7 +1436,7 @@
     if(target.matches('[data-confirm-offer]')) {purchaseOffer(target.dataset.confirmOffer);return;}
     if(target.id==='admin-gift-btn') {adminReward(false);return;} if(target.id==='admin-combo-btn') {adminReward(true);return;}
     if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;} if(target.id==='admin-global-save') {adminSaveGlobalDisplay();return;} if(target.id==='admin-save-event-reward') {adminSaveEventReward();return;} if(target.id==='admin-quest-save') {adminSaveQuest();return;} if(target.id==='admin-global-reward-send') {adminGlobalReward();return;} if(target.matches('[data-confirm-global-reward]')) {confirmGlobalReward();return;}
-    if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#pass-levels').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
+    if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#season-map-path').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
     if(target.matches('[data-claim-level]')) {claimLevel(Number(target.dataset.claimLevel),target.dataset.branch||'free');return;}
     if(target.matches('[data-claim-quest]')) {claimQuest(target.dataset.claimQuest);return;}
     if(target.id==='premium-pass-btn') {buyPremiumPass();return;}
@@ -1367,7 +1460,7 @@
     if(event.target.id==='admin-case-select')fillAdminCase();
     if(event.target.id==='admin-new-case-free')$('#admin-new-case-price').disabled=event.target.checked;
     if(event.target.id==='admin-case-free')$('#admin-case-price').disabled=event.target.checked;
-    if(event.target.id==='admin-event-type'&&MOCK){const title=event.target.value==='advent'?'Адвент-календарь':'Halloween Pass';$('#admin-event-title').value=title;}
+    if(event.target.id==='admin-event-type')$('#admin-event-title').value='Halloween: Путь к сокровищу';
     if(event.target.id==='admin-reward-event-type'){syncEventRewardBranch();}
     if(event.target.id==='admin-reward-branch'||event.target.id==='admin-reward-level'||event.target.id==='admin-event-reward-type'){syncEventRewardEditor();}
     if(event.target.id==='admin-quest-select')fillQuestEditor(event.target.value);

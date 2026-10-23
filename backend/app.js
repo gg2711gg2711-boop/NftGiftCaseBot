@@ -1089,6 +1089,7 @@ export function createApp(envProvider = () => ({})) {
     const quests = await dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,COALESCE(u.progress,0) AS progress,COALESCE(u.claimed,0) AS claimed FROM quests q LEFT JOIN user_quests u ON u.quest_id=q.id AND u.telegram_id=? WHERE q.active=1 ORDER BY q.id`, userId);
     const rewards = await dbAll(db, `SELECT er.event_type,er.branch,er.level,er.item_id,ci.title,ci.image_url,ci.kind,ci.value_stars FROM event_rewards er JOIN case_items ci ON ci.id=er.item_id ORDER BY er.event_type,er.branch,er.level`);
     const starRewards = await dbAll(db, `SELECT event_type,branch,level,amount FROM event_star_rewards ORDER BY event_type,branch,level`);
+    const leaderboard = await dbAll(db, `SELECT COALESCE(NULLIF(u.username,''),NULLIF(u.first_name,''),'Игрок') AS display_name,ep.xp FROM event_progress ep JOIN users u ON u.telegram_id=ep.telegram_id WHERE ep.xp>0 ORDER BY ep.xp DESC,ep.updated_at ASC LIMIT 20`);
     const rewardMap = new Map(rewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
     const starRewardMap = new Map(starRewards.map(r => [`${r.event_type}:${r.branch}:${r.level}`, r]));
     // The user-facing advent calendar and paid Halloween Pass are replaced by a single seasonal map.
@@ -1096,7 +1097,7 @@ export function createApp(envProvider = () => ({})) {
     const seasonMapSettings = { ...settings, event_type: 'season_map', title: oldEventTitles.includes(settings?.title) ? 'Halloween: Путь к сокровищу' : (settings?.title || 'Halloween: Путь к сокровищу') };
     const seasonMapRewards = rewards.filter(r => r.event_type === 'battle_pass' && r.branch === 'free').map(r => ({ ...r, event_type:'season_map', branch:'free' }));
     const seasonMapStarRewards = starRewards.filter(r => r.event_type === 'battle_pass' && r.branch === 'free').map(r => ({ ...r, event_type:'season_map', branch:'free' }));
-    return json(res, 200, { ok:true, settings:seasonMapSettings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, seasonMap: true, calendar:[], rewards:seasonMapRewards, starRewards:seasonMapStarRewards });
+    return json(res, 200, { ok:true, settings:seasonMapSettings, progress:progress || { xp:0,premium_unlocked:0,claimed_free_levels:'[]',claimed_premium_levels:'[]' }, quests, leaderboard, seasonMap: true, calendar:[], rewards:seasonMapRewards, starRewards:seasonMapStarRewards });
   });
 
   app.post('/api/event/quests/:questId/claim', async (req, res) => {

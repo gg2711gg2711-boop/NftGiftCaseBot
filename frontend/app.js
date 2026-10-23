@@ -9,7 +9,7 @@
   const S = {
     view: 'home', filter: 'all', search: '', cases: [], currentCase: null, quantity: 1,
     balance: 0, user: null, isAdmin: false, inventory: [], wins: [], config: {}, eventData: null, globalDisplay: null,
-    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, muted: localStorage.getItem('ngc-muted') === '1',
+    adminOverview: null, offers: [], broadcastRunning: false, selectedTarget: null, themeMode: 'normal', upgradeBet: 5, upgradeMultiplier: 2, seasonScreen: 'map', muted: localStorage.getItem('ngc-muted') === '1',
     demoInventory: [], lastSpin: null, caseSort: false,
     marketListings: [], craftSelected: [], collections: [], showcase: null, showcaseTargetId: null
   };
@@ -50,6 +50,17 @@
   ];
   const mockEvent = { enabled: true, event_type: 'season_map', title: 'Halloween: Путь к сокровищу', ends_at: '2026-11-07T00:00:00Z', premium_price_xtr: 666 };
   const demoLevels = Array.from({ length: 30 }, (_, i) => ({ level: i + 1, rewardXp: 100, image_url: ['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png'][i % 5], free: true, premium: i === 29 }));
+  const SEASON_NODE_X = [13,27,42,56,70,83,86,76,62,48,34,20,15,29,45,60,76,86,73,58,43,28,15,29,45,61,74,85,78,87];
+  const SEASON_NODE_Y = Array.from({length:30},(_,i)=>94-i*3.05);
+  const SEASON_NODE_POINTS = SEASON_NODE_X.map((x,i)=>({x,y:SEASON_NODE_Y[i]}));
+  const SEASON_FALLBACK_REWARDS = [
+    {title:'Подарочная коробка',icon:'🎁',image:'gift-box.png',kind:'gift'},
+    {title:'Монеты GiftCase',icon:'🪙',image:null,kind:'credits'},
+    {title:'Кристалл сумрака',icon:'💎',image:'ring.png',kind:'rare'},
+    {title:'Запечатанный свиток',icon:'📜',image:'perfume.png',kind:'quest'},
+    {title:'Призрачный спутник',icon:'👻',image:'gift-bear-holiday.png',kind:'rare'},
+    {title:'Тыквенный артефакт',icon:'🎃',image:'case-halloween.png',kind:'secret'}
+  ];
 
   function esc(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
   function asset(filename) {
@@ -189,11 +200,11 @@
     S.offers = [{id:'demo-offer-1',title:'Golden Starter Pack',description:'Коллекционный подарок + бонусные кредиты. Только для демонстрации.',image_url:'case-rich.png',price_credits:100,starts_at:new Date(Date.now()-3600000).toISOString(),ends_at:new Date(Date.now()+86400000).toISOString(),max_purchases:50,per_user_limit:1,sold_count:13,reward_item_title:'Blue Ring',reward_item_image:'ring.png',reward_credits:50,remaining:37,user_remaining:1}];
     S.user = { telegram_id: new URLSearchParams(location.search).get('adminPreview') === '1' ? '1080484217' : '100000001', username: 'demo_player', first_name: 'Demo', balance: 255, free_spins: 1, premium_pass: 0 };
     S.balance = S.user.balance; S.isAdmin = new URLSearchParams(location.search).get('adminPreview') === '1';
-    S.eventData = { settings: mockEvent, progress: { xp: 640, premium_unlocked: 0 }, quests: [
-      { id:'open_1',title:'Первый кейс',description:'Откройте любой кейс',target:1,reward_xp:25,progress:1,claimed:0 },
-      { id:'open_5',title:'Коллекционер',description:'Откройте 5 кейсов',target:5,reward_xp:75,progress:3,claimed:0 },
-      { id:'daily_1',title:'Ежедневный подарок',description:'Заберите подарок дня',target:1,reward_xp:40,progress:0,claimed:0 }
-    ], calendar: Array.from({length:24},(_,i)=>({day:i+1,image_url:['gift-box.png','nft-swan.png','rocket.png','perfume.png'][i%4],unlocked:new Date().getUTCMonth()===11&&i+1<=new Date().getUTCDate()})) };
+    S.eventData = { settings: mockEvent, progress: { xp: 640, premium_unlocked: 0, claimed_free_levels:'[]' }, quests: [
+      { id:'open_1',title:'Первый кейс',description:'Открой любой кейс',target:1,reward_xp:25,progress:1,claimed:0 },
+      { id:'open_5',title:'Коллекционер',description:'Открой 5 кейсов',target:5,reward_xp:75,progress:3,claimed:0 },
+      { id:'daily_1',title:'Ежедневная находка',description:'Забери подарок дня',target:1,reward_xp:40,progress:0,claimed:0 }
+    ], leaderboard:[{display_name:'ShadowCat',xp:1420},{display_name:'GhostRunner',xp:1150},{display_name:'PumpkinLord',xp:980},{display_name:'Demo Player',xp:640},{display_name:'NightCollector',xp:410}] };
     S.demoInventory = [
       { inventory_id:'demo-inv-1', item_id:'daily-teddy', title:'Плюшевый мишка', image_url:'teddy.png', kind:'gift', value_stars:5, status:'owned' },
       { inventory_id:'demo-inv-2', item_id:'blue-ring', title:'Blue Ring', image_url:'ring.png', kind:'nft', value_stars:190, status:'owned' }
@@ -810,39 +821,154 @@
   function customEventStarReward(eventType, branch, level) {
     return (S.eventData?.starRewards || []).find(r => r.event_type === eventType && r.branch === branch && Number(r.level) === Number(level));
   }
+  function seasonRewardDetails(level) {
+    const credits = customEventStarReward('season_map', 'free', level);
+    const configured = customEventReward('season_map', 'free', level);
+    if (credits) return { type:'credits', title:`${Number(credits.amount).toLocaleString('ru-RU')} кредитов`, amount:Number(credits.amount), icon:'★', image:null, description:'Внутренние кредиты GiftCase будут зачислены на баланс.' };
+    if (configured) return { type:'gift', title:configured.title || `Подарок узла ${level}`, image:configured.image_url || null, item:configured, icon:level===30?'🎃':'🎁', description:'Коллекционный предмет, который появится в твоём инвентаре.' };
+    const reward = SEASON_FALLBACK_REWARDS[(level - 1) % SEASON_FALLBACK_REWARDS.length];
+    if (level === 30) return { ...SEASON_FALLBACK_REWARDS[5], title:'Теневая тыква', description:'Секретный финальный подарок сезона. Открой последний узел, чтобы получить его.' };
+    return { ...reward, description: reward.kind === 'credits' ? 'Внутренняя валюта для функций GiftCase.' : 'Сезонная награда за продвижение по карте.' };
+  }
+  function seasonProgressState() {
+    const progress=S.eventData?.progress||{}; const xp=Math.max(0,Number(progress.xp||0));
+    let claimed=[];try{claimed=JSON.parse(progress.claimed_free_levels||'[]');if(!Array.isArray(claimed))claimed=[];}catch{claimed=[];}
+    const claimedSet=new Set(claimed.map(Number));
+    return {xp,claimedSet,unlockedCount:Math.min(30,Math.floor(xp/100)),nextLevel:Math.min(30,Math.floor(xp/100)+1)};
+  }
+  function seasonRoutePath() {
+    const pts=SEASON_NODE_POINTS.map(p=>({x:p.x*10,y:p.y*15}));
+    if(!pts.length)return '';
+    let d=`M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+    for(let i=0;i<pts.length-1;i++){
+      const p0=pts[Math.max(0,i-1)],p1=pts[i],p2=pts[i+1],p3=pts[Math.min(pts.length-1,i+2)];
+      const c1x=p1.x+(p2.x-p0.x)/6,c1y=p1.y+(p2.y-p0.y)/6;
+      const c2x=p2.x-(p3.x-p1.x)/6,c2y=p2.y-(p3.y-p1.y)/6;
+      d+=` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    return d;
+  }
+  function seasonRewardMarkup(reward, level) {
+    if(reward.image) return `<img loading="lazy" src="${imageSrc(reward.image)}" alt=""/>`;
+    return `<span class="season-reward-emoji">${esc(reward.icon||'🎁')}</span>`;
+  }
+  function renderSeasonMapNodes() {
+    const host=$('#season-map-nodes');if(!host)return;
+    const {xp,claimedSet}=seasonProgressState();
+    const path=seasonRoutePath();
+    const glow=$('#season-route-glow'),line=$('#season-route-line');if(glow)glow.setAttribute('d',path);if(line)line.setAttribute('d',path);
+    host.innerHTML=SEASON_NODE_POINTS.map((point,index)=>{
+      const level=index+1,done=claimedSet.has(level),unlocked=xp>=level*100,reward=seasonRewardDetails(level),state=done?'completed':unlocked?'unlocked':'locked';
+      const art=reward.image?`<img loading="lazy" src="${imageSrc(reward.image)}" alt=""/>`:`<span>${esc(reward.icon||'🎁')}</span>`;
+      return `<button type="button" class="season-map-node ${state} ${level===30?'is-final':''} ${level%5===0?'is-milestone':''}" data-season-node="${level}" style="left:${point.x}%;top:${point.y.toFixed(2)}%" aria-label="Узел ${level}: ${esc(reward.title)}${done?', награда получена':unlocked?', доступно к получению':', закрыто'}" title="Узел ${level} · ${esc(reward.title)}"><span class="season-node-glow"></span><span class="season-node-orb">${art}</span><span class="season-node-number">${level}</span>${done?'<span class="season-node-status">✓</span>':!unlocked?'<span class="season-node-lock">⌑</span>':''}${level===30?'<span class="season-final-crown">♛</span>':''}</button>`;
+    }).join('');
+    const embers=$('.season-embers');if(embers&&!embers.dataset.ready){embers.dataset.ready='1';embers.innerHTML=Array.from({length:18},(_,i)=>`<i style="--ember-x:${(i*47+9)%98}%;--ember-y:${(i*71+13)%98}%;--ember-delay:-${(i%8)*.7}s;--ember-duration:${5+(i%5)}s"></i>`).join('');}
+  }
+  function renderSeasonRewards() {
+    const host=$('#season-map-rewards');if(!host)return;
+    const {xp,claimedSet}=seasonProgressState();
+    host.innerHTML=Array.from({length:30},(_,i)=>{
+      const level=i+1,reward=seasonRewardDetails(level),done=claimedSet.has(level),unlocked=xp>=level*100;
+      return `<button class="season-reward-card ${done?'completed':unlocked?'unlocked':'locked'} ${level%5===0?'milestone':''}" data-season-node="${level}" type="button"><span class="season-reward-level">${done?'✓':String(level).padStart(2,'0')}</span><span class="season-reward-art">${seasonRewardMarkup(reward,level)}</span><strong>${esc(reward.title)}</strong><small>${done?'Получено':unlocked?'Можно забрать':`${level*100} XP`}</small></button>`;
+    }).join('');
+  }
+  function renderSeasonRanking() {
+    const host=$('#season-ranking');if(!host)return;
+    const rows=Array.isArray(S.eventData?.leaderboard)?S.eventData.leaderboard:[];
+    if(!rows.length){host.innerHTML='<div class="season-empty-state"><span>♛</span><strong>Рейтинг только начинается</strong><p>Выполняй сезонные задания и получай XP. Когда появятся первые участники, рейтинг отобразится здесь.</p></div>';return;}
+    host.innerHTML=rows.slice(0,20).map((row,index)=>`<article class="season-rank-row ${index<3?'top-rank top-rank-'+(index+1):''}"><span class="season-rank-place">${index===0?'👑':index===1?'🥈':index===2?'🥉':String(index+1).padStart(2,'0')}</span><span class="season-rank-avatar">${index===0?'🎃':index===1?'👻':index===2?'🦇':'🕯️'}</span><span class="season-rank-name"><strong>${esc(row.display_name||row.username||'Игрок')}</strong><small>Охотник за сокровищами</small></span><b>${Number(row.xp||0).toLocaleString('ru-RU')} <small>XP</small></b></article>`).join('');
+  }
+  function setSeasonScreen(screen, animate=true) {
+    const valid=['map','rewards','quests','ranking'];
+    if(!valid.includes(screen))screen='map';
+    S.seasonScreen=screen;
+    const labels={map:'Карта события',rewards:'Награды',quests:'Задания',ranking:'Рейтинг'};
+    document.querySelectorAll('[data-season-screen]').forEach(button=>{
+      const active=button.dataset.seasonScreen===screen;
+      button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));
+    });
+    for(const name of valid){const panel=$(`#season-panel-${name}`);if(panel)panel.classList.toggle('hidden',name!==screen);}
+    if(screen==='rewards')renderSeasonRewards();
+    if(screen==='quests'){
+      const data=S.eventData||{};const quests=data.quests||[];
+      $('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card season-quest-card"><div class="season-quest-icon">${q.claimed?'✓':'✧'}</div><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small><div class="season-quest-progress"><span style="width:${Math.min(100,100*Number(q.progress||0)/Math.max(1,Number(q.target||1)))}%"></span></div></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<div class="season-empty-state"><span>📜</span><strong>Задания появятся позже</strong><p>Администратор добавит задания перед запуском события.</p></div>';
+    }
+    if(screen==='ranking')renderSeasonRanking();
+    if(animate){const panel=$(`#season-panel-${screen}`);panel?.classList.remove('season-panel-enter');if(panel){void panel.offsetWidth;panel.classList.add('season-panel-enter');}}
+  }
+  function updateSeasonCountdown() {
+    const out=$('#season-countdown');if(!out)return;
+    const settings=S.eventData?.settings||mockEvent,raw=settings.ends_at||settings.endsAt;
+    if(!raw){out.textContent='Срок не задан';return;}
+    const end=new Date(raw).getTime();if(!Number.isFinite(end)){out.textContent='Дата не задана';return;}
+    const seconds=Math.max(0,Math.floor((end-Date.now())/1000));
+    if(!seconds){out.textContent='ЗАВЕРШЕНО';out.classList.add('expired');return;}
+    out.classList.remove('expired');const days=Math.floor(seconds/86400),hours=Math.floor(seconds%86400/3600),mins=Math.floor(seconds%3600/60),secs=seconds%60;
+    out.textContent=days>0?`${days}д ${String(hours).padStart(2,'0')}ч ${String(mins).padStart(2,'0')}м`:`${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+  }
   function renderEvent() {
-    const data=S.eventData||{};const settings=data.settings||data.event||mockEvent;
+    const data=S.eventData||{},settings=data.settings||data.event||mockEvent;
     const beforeEnd=!settings.ends_at||new Date(settings.ends_at).getTime()>Date.now();
     const enabled=(Boolean(Number(settings.enabled)||settings.enabled===true))&&beforeEnd;
-    $('#event-title').textContent=enabled?(settings.title||'Карта сезона'):'Карта сезона';
+    const title=settings.title||'Halloween: Путь к сокровищу';
+    $('#event-title').textContent=enabled?title:'Карта сезона';
     $('#event-nav-label').textContent=enabled?'Карта сезона':'Скоро';
     $('#event-status').textContent=enabled?'АКТИВЕН':'СКОРО';
     $('#event-soon').classList.toggle('hidden',enabled);
     $('#season-map-content').classList.toggle('hidden',!enabled);
-    const progress=data.progress||{xp:0,claimed_free_levels:'[]'};const xp=Number(progress.xp||0);const level=Math.min(30,Math.floor(xp/100)+1);
-    $('#season-map-name').textContent=settings.title||'Halloween: Путь к сокровищу';
+    $('#season-map-name').textContent=/halloween/i.test(title)?'HALLOWEEN':title.toLocaleUpperCase('ru-RU');
+    const {xp,claimedSet,unlockedCount,nextLevel}=seasonProgressState();
     $('#pass-xp-value').textContent=`${xp.toLocaleString('ru-RU')} XP`;
-    $('#pass-xp-label').textContent=`Узел ${Math.min(30,Math.floor(xp/100)+1)} из 30`;
+    $('#pass-xp-label').textContent=claimedSet.size>=30?'Сезон завершён':`${claimedSet.size}/30 наград`;
     $('#season-map-progress-fill').style.width=`${Math.min(100,xp/3000*100)}%`;
-    let claimed=[];try{claimed=JSON.parse(progress.claimed_free_levels||'[]');if(!Array.isArray(claimed))claimed=[];}catch{claimed=[];}
-    const eventType='season_map';
-    const nodes=Array.from({length:30},(_,i)=>{
-      const number=i+1,unlocked=xp>=number*100,done=claimed.includes(number);
-      const configured=customEventReward(eventType,'free',number);const credits=customEventStarReward(eventType,'free',number);
-      const fallback=['gift-box.png','rocket.png','perfume.png','ring.png','nft-swan.png','case-halloween.png'][i%6];
-      const visual=credits?`<div class="season-map-credit"><span>★</span><b>+${Number(credits.amount).toLocaleString('ru-RU')}</b></div>`:`<img loading="lazy" src="${configured?.image_url?imageSrc(configured.image_url):asset(number===30?'case-halloween.png':fallback)}" alt="${esc(configured?.title||`Награда узла ${number}`)}"/>`;
-      const title=credits?`${Number(credits.amount).toLocaleString('ru-RU')} кредитов`:configured?.title||(['Набор','Ракета','Парфюм','Кольцо','Коллекционный подарок'][i%5]);
-      const state=done?'completed':unlocked?'unlocked':'locked';
-      const action=done?'Забрано':unlocked?'Забрать':`${number*100} XP`;
-      return `<div class="season-map-stop ${state} ${number%5===0?'season-map-milestone':''}"><span class="season-map-stop-connector" aria-hidden="true"></span><article class="season-map-node-card"><div class="season-map-node-top"><span>${number===30?'✧ СЕКРЕТНЫЙ ФИНАЛ':number%5===0?'✦ МИЛСТОУН':'УЗЕЛ '+String(number).padStart(2,'0')}</span><strong>${done?'✓':unlocked?'●':'🔒'}</strong></div><div class="season-map-node-art">${visual}</div><div class="season-map-node-title">${esc(title)}</div><small>${number*100} XP</small><button class="${done?'secondary-btn':'small-primary'}" data-claim-level="${number}" data-branch="free" ${!unlocked||done?'disabled':''}>${action}</button></article></div>`;
-    });
-    $('#season-map-path').innerHTML=nodes.join('');
-    const quests=data.quests||[];
-    $('#quests-list').innerHTML=quests.map(q=>`<article class="quest-card"><div><strong>${esc(q.title)}</strong><p>${esc(q.description)}</p><small>${Number(q.progress||0)} / ${Number(q.target)} · +${Number(q.reward_xp)} XP</small></div><button data-claim-quest="${esc(q.id)}" ${q.claimed||Number(q.progress)<Number(q.target)?'disabled':''}>${q.claimed?'Получено':'Забрать XP'}</button></article>`).join('')||'<p class="muted-note">Задания появятся после запуска события.</p>';
+    renderSeasonMapNodes();renderSeasonRewards();renderSeasonRanking();setSeasonScreen(S.seasonScreen,false);updateSeasonCountdown();
+  }
+  function openSeasonNode(level) {
+    if(!Number.isSafeInteger(level)||level<1||level>30)return;
+    const {xp,claimedSet}=seasonProgressState(),done=claimedSet.has(level),unlocked=xp>=level*100,reward=seasonRewardDetails(level);
+    const status=done?'НАГРАДА ПОЛУЧЕНА':unlocked?'ДОСТУПНО':'ЗАБЛОКИРОВАНО';
+    const art=reward.image?`<img src="${imageSrc(reward.image)}" alt=""/>`:`<span>${esc(reward.icon||'🎁')}</span>`;
+    const action=done?'<button class="secondary-btn wide-btn" data-close-modal>Узел пройден ✓</button>':unlocked?`<button class="season-claim-button wide-btn" data-claim-level="${level}" data-branch="free">✨ Открыть награду</button>`:`<button class="secondary-btn wide-btn" data-season-screen="quests">Выполнить задания ↗</button>`;
+    openModal(`<div class="season-node-modal ${level===30?'is-final':''}"><div class="season-node-modal-overline">${level===30?'✦ СЕКРЕТНЫЙ ФИНАЛ':`УЗЕЛ ${String(level).padStart(2,'0')} / 30`}</div><div class="season-node-modal-art">${art}<span class="season-modal-aura"></span></div><span class="season-node-modal-state ${done?'done':unlocked?'ready':'locked'}">${status}</span><h2 class="modal-title">${esc(reward.title)}</h2><p class="modal-copy">${esc(reward.description||'Награда сезонной карты GiftCase.')}</p><div class="season-node-requirement"><span>Требование</span><strong>${done?'Уже получено':`${level*100} XP`}</strong><small>${unlocked?`У тебя ${xp.toLocaleString('ru-RU')} XP`:`Не хватает ${Math.max(0,level*100-xp).toLocaleString('ru-RU')} XP`}</small></div>${action}</div>`);
+  }
+  function openSeasonProgress() {
+    const {xp,claimedSet}=seasonProgressState(),next=Math.min(30,Math.floor(xp/100)+1),done=claimedSet.size>=30;
+    const remaining=done?0:Math.max(0,next*100-xp);
+    openModal(`<div class="season-progress-modal"><div class="season-modal-crown">♛</div><span class="season-overline">HALLOWEEN · PROGRESS</span><h2 class="modal-title">Твой путь охотника</h2><p class="modal-copy">Пройдено ${claimedSet.size} из 30 наград. Выполняй задания, чтобы набирать сезонный опыт и двигаться к Теневой тыкве.</p><div class="season-big-progress"><div><strong>${xp.toLocaleString('ru-RU')} XP</strong><small>${done?'Все награды пройдены':`Ещё ${remaining} XP до узла ${next}`}</small></div><span><i style="width:${Math.min(100,xp/3000*100)}%"></i></span></div><div class="modal-actions"><button class="secondary-btn" data-close-modal>Закрыть</button><button class="season-claim-button" data-season-screen="quests">К заданиям</button></div></div>`);
+  }
+  function openSeasonHelp() {
+    openModal(`<div class="season-help-modal"><div class="season-help-emblem">🎃</div><span class="season-overline">HOW TO PLAY</span><h2 class="modal-title">Как пройти сезонную карту</h2><p class="modal-copy">Собирай сезонный XP за игровые задания. Каждый узел требует ${100} XP × номер этапа, а награду можно забрать только один раз. Награды, которые ты уже получил, останутся в инвентаре после завершения события.</p><div class="season-help-row"><span>🗺️</span><div><strong>Исследуй карту</strong><small>Нажми на узел, чтобы увидеть награду и условие.</small></div></div><div class="season-help-row"><span>📜</span><div><strong>Выполняй задания</strong><small>Забирай доступный XP на вкладке «Задания».</small></div></div><div class="season-help-row"><span>👑</span><div><strong>Доберись до финала</strong><small>Узел 30 хранит секретную сезонную награду.</small></div></div><button class="season-claim-button wide-btn" data-season-screen="quests">Перейти к заданиям ↗</button></div>`);
+  }
+  function openSeasonLegend(kind) {
+    const items={gifts:['🎁 Подарки','Коллекционные предметы из сезонных узлов. Полученные предметы появляются в инвентаре.'],credits:['🪙 Кредиты','Внутренние кредиты GiftCase начисляются на игровой баланс и не являются реальными Telegram Stars.'],rare:['💎 Редкие предметы','Особые предметы и варианты оформления, которые встречаются только на некоторых этапах сезона.'],titles:['♛ Титулы и рамки','Награды за сезонные достижения могут открывать оформление профиля и коллекционные отметки.'],secret:['🔒 Секретные награды','Финальные и скрытые награды раскрываются при выполнении заданий события.']};
+    const item=items[kind]||items.gifts;openModal(`<div class="season-help-modal"><div class="season-help-emblem">${item[0].split(' ')[0]}</div><h2 class="modal-title">${esc(item[0].replace(/^\S+\s*/,''))}</h2><p class="modal-copy">${esc(item[1])}</p><button class="secondary-btn wide-btn" data-close-modal>Понятно</button></div>`);
+  }
+  function showSeasonRewardReveal(level,result={}) {
+    const rewardItem=result.item||null;
+    const rewardTitle=rewardItem?.title|| (result.rewardType==='credits'?`${Number(result.amount||0).toLocaleString('ru-RU')} кредитов` : `Награда узла ${level}`);
+    const visual=rewardItem?.image_url?`<img src="${imageSrc(rewardItem.image_url)}" alt=""/>`:result.rewardType==='credits'?'<span>★</span>':'<span>🎁</span>';
+    openModal(`<div class="season-reveal"><div class="season-reveal-rays"></div><div class="season-reveal-confetti">${Array.from({length:22},(_,i)=>`<i style="--confetti-i:${i};left:${(i*41+9)%100}%;--drift:${((i*19)%81)-40}px"></i>`).join('')}</div><span class="season-overline">GIFTCASE · REWARD UNLOCKED</span><div class="season-reveal-art">${visual}</div><div class="season-reveal-kicker">УЗЕЛ ${String(level).padStart(2,'0')} ПРОЙДЕН</div><h2 class="modal-title">Награда получена!</h2><p>${esc(rewardTitle)}</p><small>${esc(result.message||'Награда сохранена в твоей коллекции.')}</small><div class="modal-actions"><button class="secondary-btn" data-close-modal>Продолжить</button><button class="season-claim-button" data-jump="inventory">Мой инвентарь</button></div></div>`);
   }
   async function claimLevel(level, branch='free') {
-    if(MOCK) { const p=S.eventData.progress;p.xp=Number(p.xp||0);const needed=level*100;if(p.xp<needed)return toast('Недостаточно XP для этой награды','error');if(branch==='premium'&&!p.premium_unlocked)return toast('Сначала активируйте Premium Pass','error');toast(`DEMO: награда уровня ${level} доступна в полной версии`,'success');return renderEvent(); }
-    try {const result=await api(`/api/event/levels/${level}/claim`,{method:'POST',body:{branch}});toast(result.message||'Награда получена','success');await refreshUserData();}catch(err){toast(err.message,'error');}
+    if(MOCK) {
+      const p=S.eventData.progress;p.xp=Number(p.xp||0);const needed=level*100;
+      let claimed=[];try{claimed=JSON.parse(p.claimed_free_levels||'[]');}catch{claimed=[];}
+      if(p.xp<needed)return toast('Недостаточно XP для этой награды','error');
+      if(claimed.map(Number).includes(level))return toast('Награда уже получена','error');
+      const credits=customEventStarReward('season_map','free',level);let result={ok:true,message:`Награда узла ${level} получена`};
+      claimed.push(level);p.claimed_free_levels=JSON.stringify(claimed);
+      if(credits){result.rewardType='credits';result.amount=Number(credits.amount);S.balance+=result.amount;renderBalance();}
+      else {
+        const reward=customEventReward('season_map','free',level);const fallback=mockItems[(level-1)%mockItems.length];
+        const item=reward||fallback;result.item={title:item.title,image_url:item.image_url};
+        S.demoInventory=S.demoInventory||[];S.demoInventory.push({inventory_id:`demo-season-${level}-${Date.now()}`,item_id:item.id,title:item.title,image_url:item.image_url,kind:item.kind||'gift',value_stars:Number(item.value_stars||5),status:'owned',background_key:'default',serial_number:String(1000+level)});S.inventory=S.demoInventory;
+      }
+      closeModal();renderEvent();showSeasonRewardReveal(level,result);sound('win');return;
+    }
+    try {
+      const result=await api(`/api/event/levels/${level}/claim`,{method:'POST',body:{branch}});
+      closeModal();await refreshUserData();showSeasonRewardReveal(level,result);sound('win');
+    } catch(err){toast(err.message,'error');}
   }
   async function claimQuest(questId) {
     if(MOCK) {const q=S.eventData.quests.find(q=>q.id===questId);if(!q||q.progress<q.target)return toast('Задание ещё не выполнено','error');q.claimed=1;S.eventData.progress.xp+=q.reward_xp;toast(`Получено ${q.reward_xp} XP`,'success');renderEvent();return;}
@@ -1436,6 +1562,10 @@
     if(target.matches('[data-confirm-offer]')) {purchaseOffer(target.dataset.confirmOffer);return;}
     if(target.id==='admin-gift-btn') {adminReward(false);return;} if(target.id==='admin-combo-btn') {adminReward(true);return;}
     if(target.id==='admin-case-save') {adminSaveCase();return;} if(target.id==='admin-create-case') {adminCreateCase();return;} if(target.id==='admin-add-item') {adminAddItem();return;} if(target.matches('[data-admin-remove-item]')) {adminRemoveItem(target.dataset.adminRemoveItem);return;} if(target.id==='admin-promo-create') {adminCreatePromo();return;} if(target.id==='admin-event-save') {adminSaveEvent();return;} if(target.id==='admin-global-save') {adminSaveGlobalDisplay();return;} if(target.id==='admin-save-event-reward') {adminSaveEventReward();return;} if(target.id==='admin-quest-save') {adminSaveQuest();return;} if(target.id==='admin-global-reward-send') {adminGlobalReward();return;} if(target.matches('[data-confirm-global-reward]')) {confirmGlobalReward();return;}
+    if(target.matches('[data-season-screen]')) {if(target.closest('#modal-content'))closeModal();setSeasonScreen(target.dataset.seasonScreen);return;}
+    if(target.matches('[data-season-node]')) {openSeasonNode(Number(target.dataset.seasonNode));return;}
+    if(target.matches('[data-season-action]')) {const action=target.dataset.seasonAction;if(action==='progress')openSeasonProgress();else if(action==='help')openSeasonHelp();else if(action==='secret')openSeasonNode(30);return;}
+    if(target.matches('[data-season-legend]')) {openSeasonLegend(target.dataset.seasonLegend);return;}
     if(target.matches('[data-event-tab]')) {$$('[data-event-tab]').forEach(b=>b.classList.toggle('selected',b===target));const quests=target.dataset.eventTab==='quests';$('#season-map-path').classList.toggle('hidden',quests);$('#quests-list').classList.toggle('hidden',!quests);return;}
     if(target.matches('[data-claim-level]')) {claimLevel(Number(target.dataset.claimLevel),target.dataset.branch||'free');return;}
     if(target.matches('[data-claim-quest]')) {claimQuest(target.dataset.claimQuest);return;}
@@ -1474,7 +1604,7 @@
   document.addEventListener('keydown',event=>{if(event.key==='Escape')closeModal();});
   if(tg?.BackButton) { tg.BackButton.onClick(()=>setView('home')); }
   window.addEventListener('focus',()=>{if(!MOCK)refreshUserData();});
-  window.setInterval(()=>{updateGlobalCountdown();},1000);
+  window.setInterval(()=>{updateGlobalCountdown();updateSeasonCountdown();},1000);
   window.setInterval(()=>{if(!MOCK&&document.visibilityState==='visible'){api('/api/live-wins').then(r=>{S.wins=r.wins;renderLive();}).catch(()=>{});api('/api/global-display').then(r=>{S.globalDisplay=r.settings;renderGlobalDisplay();}).catch(()=>{});api('/api/theme').then(r=>{if(r.theme!==S.themeMode)applyTheme(r.theme);}).catch(()=>{});loadOffers().catch(()=>{});}},30000);
   window.addEventListener('error',event=>console.error('NftGiftCase UI error',event.message));
   syncSoundButton(); loadAll();

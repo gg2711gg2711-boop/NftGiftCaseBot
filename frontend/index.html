@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261024-craft-map-history" />
+  <link rel="stylesheet" href="./styles.css?v=20261024-halloween-interactive-map" />
 </head>
 <body>
   <div class="app-shell">
@@ -201,14 +201,57 @@
         <div id="seasonal-collections-empty" class="empty-state hidden"><div class="empty-icon">🍂</div><h3>Сезоны пока не запущены</h3><p>Новые коллекции появятся здесь после запуска события.</p></div>
       </section>
 
-      <section id="event-view" class="view">
-        <div class="page-title-row"><div><p class="eyebrow">SEASONAL ADVENTURE</p><h1 id="event-title">Карта сезона</h1></div><span class="event-status" id="event-status">СКОРО</span></div>
-        <div id="event-soon" class="panel event-soon"><div class="event-art"><img src="./assets/case-halloween.png" alt="Сезонный сундук" /></div><h2>Следующее событие скоро</h2><p>Подготовь коллекцию и следи за новостями, чтобы пройти сезонный путь.</p></div>
-        <div id="season-map-content" class="hidden">
-          <div class="panel season-map-hero"><div class="season-map-hero-top"><div><span class="eyebrow">GIFTCASE · SEASON MAP</span><h2 id="season-map-name">Halloween: Путь к сокровищу</h2><p>Проходи задания, набирай XP и открывай награды на пути к секретному финалу.</p></div><img src="./assets/case-halloween.png" alt="Halloween сундук" /></div><div class="season-map-progress-copy"><strong id="pass-xp-value">0 XP</strong><span id="pass-xp-label">Узел 1 из 30</span></div><div class="season-map-progress"><span id="season-map-progress-fill"></span></div></div>
-          <div class="pass-tabs"><button class="selected" data-event-tab="map">🗺️ Карта</button><button data-event-tab="quests">📜 Задания</button></div>
-          <div id="season-map-path" class="season-map-path"></div>
-          <div id="quests-list" class="quest-list hidden"></div>
+      <section id="event-view" class="view season-map-view">
+        <span id="event-title" class="hidden">Карта сезона</span><span id="event-status" class="hidden">СКОРО</span>
+        <div class="season-map-toolbar">
+          <button class="season-back" data-back="home" aria-label="Назад на главную">‹</button>
+          <div class="season-brand"><span class="season-brand-icon">🎁</span><span>GIFT<span>CASE</span></span></div>
+          <div class="season-countdown"><small>ДО КОНЦА СОБЫТИЯ</small><strong id="season-countdown">Загрузка…</strong></div>
+          <button class="season-info-button" data-season-action="help" aria-label="Как работает сезон?">i</button>
+        </div>
+        <div id="event-soon" class="panel event-soon season-event-soon"><div class="event-art"><img src="./assets/case-halloween.png" alt="Сезонный сундук" /></div><h2>Следующее событие скоро</h2><p>Подготовь коллекцию и следи за новостями, чтобы пройти сезонный путь.</p></div>
+        <div id="season-map-content" class="season-map-content hidden">
+          <div class="season-map-heading">
+            <div class="season-map-heading-copy"><span class="season-overline">GIFTCASE · SEASONAL ADVENTURE</span><h1 id="season-map-name">HALLOWEEN</h1><p>Проходи узлы, выполняй задания и забирай награды. В финале тебя ждёт секретный подарок.</p></div>
+            <button class="season-progress-card" data-season-action="progress" aria-label="Посмотреть прогресс сезона"><span class="season-progress-crown">♛</span><span class="season-progress-copy"><small>ТВОЙ ПРОГРЕСС</small><strong id="pass-xp-value">0 XP</strong><span id="pass-xp-label">Узел 1 из 30</span><i class="season-progress-track"><i id="season-map-progress-fill"></i></i></span><b class="season-progress-gift">🎁</b></button>
+          </div>
+          <nav class="season-map-tabs" aria-label="Разделы сезонного события" role="tablist">
+            <button class="active" data-season-screen="map" role="tab" aria-selected="true">⌖ <span>Карта события</span></button>
+            <button data-season-screen="rewards" role="tab" aria-selected="false">🎁 <span>Награды</span></button>
+            <button data-season-screen="quests" role="tab" aria-selected="false">☑ <span>Задания</span></button>
+            <button data-season-screen="ranking" role="tab" aria-selected="false">♛ <span>Рейтинг</span></button>
+          </nav>
+          <div id="season-panel-map" class="season-screen">
+            <div class="season-map-world" id="season-map-world" aria-label="Интерактивная карта Halloween">
+              <div class="season-world-moon" aria-hidden="true"></div><div class="season-world-castle" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+              <div class="season-world-fog fog-a" aria-hidden="true"></div><div class="season-world-fog fog-b" aria-hidden="true"></div>
+              <svg class="season-route-svg" viewBox="0 0 1000 1500" preserveAspectRatio="none" aria-hidden="true"><path id="season-route-glow" d=""/><path id="season-route-line" d=""/></svg>
+              <div id="season-map-nodes" class="season-map-nodes"></div>
+              <button type="button" class="season-start-sign" data-season-node="1" aria-label="Начать сезон с узла 1">✦ СТАРТ</button>
+              <div class="season-world-hint" aria-hidden="true"><span>✧</span> Собери всю коллекцию<br/>и открой финальный приз!</div>
+              <div class="season-embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            </div>
+            <div class="season-map-legend" aria-label="Категории наград">
+              <button data-season-legend="gifts"><span>🎁</span><small>Подарки</small></button>
+              <button data-season-legend="credits"><span>🪙</span><small>Кредиты</small></button>
+              <button data-season-legend="rare"><span>💎</span><small>Редкие</small></button>
+              <button data-season-legend="titles"><span>♛</span><small>Титулы</small></button>
+              <button data-season-legend="secret"><span>🔒</span><small>Секрет</small></button>
+            </div>
+          </div>
+          <section id="season-panel-rewards" class="season-screen hidden" aria-label="Награды сезона">
+            <div class="season-subhead"><div><span class="season-overline">TREASURE TRACK</span><h2>Награды карты</h2><p>Нажми на узел, чтобы увидеть условие получения.</p></div><span class="season-mini-badge">30 УЗЛОВ</span></div>
+            <div id="season-map-rewards" class="season-reward-grid"></div>
+          </section>
+          <section id="season-panel-quests" class="season-screen hidden" aria-label="Задания сезона">
+            <div class="season-subhead"><div><span class="season-overline">DAILY · SEASONAL</span><h2>Задания охотника</h2><p>Выполняй задания и получай XP для открытия новых узлов.</p></div><span class="season-mini-badge">XP</span></div>
+            <div id="quests-list" class="quest-list"></div>
+          </section>
+          <section id="season-panel-ranking" class="season-screen hidden" aria-label="Рейтинг сезона">
+            <div class="season-subhead"><div><span class="season-overline">TOP COLLECTORS</span><h2>Рейтинг охотников</h2><p>Соревнуйся по количеству сезонного опыта.</p></div><span class="season-mini-badge">🏆 TOP 20</span></div>
+            <div id="season-ranking" class="season-ranking-list"></div>
+          </section>
+          <div class="season-map-bottom-actions"><button class="season-secondary-action" data-season-action="help">ⓘ Как проходить карту?</button><button class="season-primary-action" data-season-screen="quests">К заданиям <span>↗</span></button></div>
         </div>
       </section>
 
@@ -340,6 +383,6 @@
 
   <script src="./config.js?v=20261023-offers-broadcasts1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261024-craft-map-history" defer></script>
+  <script src="./app.js?v=20261024-halloween-interactive-map" defer></script>
 </body>
 </html>

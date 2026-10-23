@@ -14,6 +14,30 @@ const dbRun = (db, sql, ...args) => db.prepare(sql).bind(...args).run();
 const id = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
 const fail = (res, status, message) => json(res, status, { ok: false, error: message });
+
+async function writeAdminAudit(db, telegramId, action, details = {}) {
+  if (!db) return;
+  try {
+    await dbRun(db,
+      'INSERT INTO admin_audit_log(id,admin_telegram_id,action,details,created_at) VALUES(?,?,?,?,?)',
+      id(), String(telegramId || ''), String(action || 'admin_action').slice(0, 100),
+      JSON.stringify(details || {}).slice(0, 1200), nowIso());
+  } catch (err) { console.warn('Admin audit log write failed:', err?.message || err); }
+}
+
+function adminActionLabel(req) {
+  const path = String(req.path || '');
+  if (path.includes('/offers')) return 'Магазин ограниченных предложений';
+  if (path.includes('/broadcasts')) return 'Рассылка игрокам';
+  if (path.includes('/cases')) return 'Управление кейсами';
+  if (path.includes('/promocodes')) return 'Промокоды';
+  if (path.includes('/balance')) return 'Изменение баланса';
+  if (path.includes('/rewards')) return 'Выдача наград';
+  if (path.includes('/event')) return 'Настройки события';
+  if (path.includes('/quests')) return 'Редактор квестов';
+  if (path.includes('/global-display')) return 'Глобальное сообщение / таймер';
+  return 'Административное действие';
+}
 function normalizeImageUrl(value) {
   const raw = String(value || '').trim();
   if (/^[a-z0-9][a-z0-9._-]{0,119}$/i.test(raw)) return raw;
@@ -516,6 +540,71 @@ export function createApp(envProvider = () => ({})) {
     return json(res, 200, { ok: true, cases: detailed });
   });
 
+  // Active limited-time shop offers; dates and global/per-player stock are enforced server-side.
+  app.get('/api/offers', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id); const now = nowIso();
+    const offers = await dbAll(db, `SELECT o.*,ci.title AS reward_item_title,ci.image_url AS reward_item_image,
+      COALESCE(uc.purchase_count,0) AS user_purchases
+      FROM limited_offers o LEFT JOIN case_items ci ON ci.id=o.reward_item_id
+      LEFT JOIN limited_offer_user_counts uc ON uc.offer_id=o.id AND uc.telegram_id=?
+      WHERE o.active=1 AND o.starts_at<=? AND o.ends_at>? AND (o.max_purchases IS NULL OR o.sold_count<o.max_purchases)
+        AND (o.per_user_limit IS NULL OR COALESCE(uc.purchase_count,0)<o.per_user_limit)
+      ORDER BY o.ends_at ASC,o.created_at DESC`, userId, now, now);
+    return json(res, 200, { ok:true, offers: offers.map(o => ({...o, remaining: o.max_purchases == null ? null : Math.max(0, Number(o.max_purchases)-Number(o.sold_count)), user_remaining: o.per_user_limit == null ? null : Math.max(0, Number(o.per_user_limit)-Number(o.user_purchases))})) });
+  });
+
+  app.post('/api/offers/:offerId/purchase', async (req, res) => {
+    const db = dbOf(req); const userId = String(req.user.telegram_id); const offerId = String(req.params.offerId || '');
+    let userReserved = false; let stockReserved = false; let balanceDebited = false;
+    let reservedPrice = 0; let bonusGranted = 0; let inventoryId = null; let inventoryItemId = null; let itemAwardCounted = false; let purchaseRecordId = null;
+    try {
+      const offer = await dbFirst(db, 'SELECT * FROM limited_offers WHERE id=?', offerId);
+      if (!offer || Number(offer.active)!==1) return fail(res, 404, 'Предложение больше недоступно');
+      const now = nowIso();
+      if (String(offer.starts_at)>now) return fail(res, 409, 'Предложение ещё не началось');
+      if (String(offer.ends_at)<=now) return fail(res, 409, 'Время предложения закончилось');
+      if (!offer.reward_item_id && Number(offer.reward_credits||0)<=0) return fail(res, 409, 'У предложения нет доступной награды');
+      await dbRun(db, 'INSERT OR IGNORE INTO limited_offer_user_counts(offer_id,telegram_id,purchase_count) VALUES(?,?,0)', offerId, userId);
+      const userHold = await dbRun(db, 'UPDATE limited_offer_user_counts SET purchase_count=purchase_count+1 WHERE offer_id=? AND telegram_id=? AND purchase_count < ?', offerId, userId, offer.per_user_limit == null ? 100000000 : Number(offer.per_user_limit));
+      if ((userHold.meta?.changes||0)===0) return fail(res, 409, 'Ты уже использовал лимит покупок этого предложения');
+      userReserved = true;
+      const stockHold = await dbRun(db, `UPDATE limited_offers SET sold_count=sold_count+1,updated_at=? WHERE id=? AND active=1 AND starts_at<=? AND ends_at>? AND (max_purchases IS NULL OR sold_count<max_purchases)`, now, offerId, now, now);
+      if ((stockHold.meta?.changes||0)===0) { await dbRun(db, 'UPDATE limited_offer_user_counts SET purchase_count=MAX(0,purchase_count-1) WHERE offer_id=? AND telegram_id=?', offerId,userId); userReserved=false; return fail(res, 409, 'Все наборы уже куплены или предложение завершено'); }
+      stockReserved = true;
+      const debit = await dbRun(db, 'UPDATE users SET balance=balance-?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=? AND balance>=?', Number(offer.price_credits), userId, Number(offer.price_credits));
+      if ((debit.meta?.changes||0)===0) {
+        await dbRun(db, 'UPDATE limited_offers SET sold_count=MAX(0,sold_count-1),updated_at=? WHERE id=?', nowIso(), offerId); stockReserved=false;
+        await dbRun(db, 'UPDATE limited_offer_user_counts SET purchase_count=MAX(0,purchase_count-1) WHERE offer_id=? AND telegram_id=?', offerId,userId); userReserved=false;
+        return fail(res, 409, 'Недостаточно внутренних кредитов ★');
+      }
+      balanceDebited = true; reservedPrice = Number(offer.price_credits);
+      if (offer.reward_item_id) {
+        const item = await dbFirst(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items WHERE id=?', offer.reward_item_id);
+        if (!item) throw new Error('Предмет награды больше не существует');
+        inventoryId = id(); inventoryItemId = item.id;
+        await dbRun(db, `INSERT INTO inventory(id,telegram_id,item_id,source,status) VALUES(?,?,?,'limited_offer','owned')`, inventoryId,userId,item.id);
+        await dbRun(db, 'UPDATE case_items SET awarded_count=awarded_count+1 WHERE id=?', item.id); itemAwardCounted = true;
+      }
+      const bonusCredits = Number(offer.reward_credits||0);
+      if (bonusCredits>0) { await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', bonusCredits,userId); bonusGranted=bonusCredits; }
+      purchaseRecordId=id();
+      await dbRun(db, `INSERT INTO limited_offer_purchases(id,offer_id,telegram_id,price_credits,reward_item_id,reward_credits,inventory_id,created_at) VALUES(?,?,?,?,?,?,?,?)`, purchaseRecordId,offerId,userId,Number(offer.price_credits),offer.reward_item_id||null,bonusCredits,inventoryId,nowIso());
+      const updatedUser = await dbFirst(db, 'SELECT balance FROM users WHERE telegram_id=?', userId);
+      return json(res, 200, {ok:true, message:`Набор «${offer.title}» куплен!`, inventoryId, rewardCredits:bonusCredits, balance:Number(updatedUser?.balance||0)});
+    } catch (err) {
+      // Release temporary reservations and undo any partial reward grants if a later step fails.
+      if (purchaseRecordId) { try { await dbRun(db,'DELETE FROM limited_offer_purchases WHERE id=?',purchaseRecordId); } catch {} }
+      if (inventoryId) { try { await dbRun(db,'DELETE FROM inventory WHERE id=? AND telegram_id=?',inventoryId,userId); } catch {} }
+      if (itemAwardCounted && inventoryItemId) { try { await dbRun(db,'UPDATE case_items SET awarded_count=MAX(0,awarded_count-1) WHERE id=?',inventoryItemId); } catch {} }
+      if (bonusGranted>0) { try { await dbRun(db,'UPDATE users SET balance=MAX(0,balance-?),updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?',bonusGranted,userId); } catch {} }
+      if (balanceDebited) { try { await dbRun(db, 'UPDATE users SET balance=balance+?,updated_at=CURRENT_TIMESTAMP WHERE telegram_id=?', reservedPrice || Number((await dbFirst(db,'SELECT price_credits FROM limited_offers WHERE id=?',offerId))?.price_credits||0), userId); } catch {} }
+      if (stockReserved) { try { await dbRun(db,'UPDATE limited_offers SET sold_count=MAX(0,sold_count-1),updated_at=? WHERE id=?',nowIso(),offerId); } catch {} }
+      if (userReserved) { try { await dbRun(db,'UPDATE limited_offer_user_counts SET purchase_count=MAX(0,purchase_count-1) WHERE offer_id=? AND telegram_id=?',offerId,userId); } catch {} }
+      console.error('Limited offer purchase failed:', err?.message||err);
+      return fail(res, 500, 'Не удалось завершить покупку набора. Баланс и лимит проверены; попробуй ещё раз.');
+    }
+  });
+
   app.post('/api/inventory/:inventoryId/sell', async (req, res) => {
     const db = dbOf(req); const userId = String(req.user.telegram_id); const inventoryId = String(req.params.inventoryId || '');
     const item = await dbFirst(db, `SELECT inv.id,inv.status,ci.title,ci.value_stars FROM inventory inv JOIN case_items ci ON ci.id=inv.item_id WHERE inv.id=? AND inv.telegram_id=?`, inventoryId, userId);
@@ -839,25 +928,123 @@ export function createApp(envProvider = () => ({})) {
     return json(res, 200, { ok:true, status:'finished', winnerId:winner.userId, results, transferredItem:loser.item, balance:(await dbFirst(db,'SELECT balance FROM users WHERE telegram_id=?',winner.userId))?.balance });
   });
 
+  // Record successful admin mutations for the audit trail. Response is sent after the log write attempt.
+  app.use('/api/admin', requireAdmin, (req, res, next) => {
+    if (req.method === 'GET' || /(?:^|\/)broadcasts\/[^/]+\/process$/.test(req.path)) return next();
+    const originalJson = res.json.bind(res);
+    res.json = (payload) => {
+      const status = Number(res.statusCode || 200);
+      if (status >= 200 && status < 300 && payload?.ok !== false) {
+        const details = {method:req.method, path:String(req.path||'').slice(0,180)};
+        if (typeof req.body?.title === 'string') details.title = req.body.title.slice(0,80);
+        if (typeof req.body?.code === 'string') details.code = req.body.code.slice(0,32);
+        writeAdminAudit(dbOf(req), req.user?.telegram_id, adminActionLabel(req), details)
+          .catch(() => {}).finally(() => originalJson(payload));
+        return res;
+      }
+      return originalJson(payload);
+    };
+    next();
+  });
+
   // Admin API: all write operations are protected server-side by Telegram ID.
   app.get('/api/admin/overview', requireAdmin, async (req, res) => {
     const db = dbOf(req);
-    const [userCount, orders, withdrawals, cases, promos, rewardCatalog, quests] = await Promise.all([
+    const [userCount, orders, withdrawals, cases, promos, rewardCatalog, quests, offers, broadcasts, auditLogs] = await Promise.all([
       dbFirst(db, 'SELECT COUNT(*) AS n FROM users'),
       dbAll(db, 'SELECT id,telegram_id,order_type,amount_xtr,status,created_at,paid_at FROM orders ORDER BY created_at DESC LIMIT 30'),
       dbAll(db, `SELECT w.id,w.status,w.created_at,u.telegram_id,u.username,ci.title AS item_title FROM withdrawals w JOIN users u ON u.telegram_id=w.telegram_id JOIN inventory inv ON inv.id=w.inventory_id JOIN case_items ci ON ci.id=inv.item_id ORDER BY w.created_at DESC LIMIT 30`),
-      // Hide internal daily reward cases and retired sample crates from the owner's case builder.
       dbAll(db, `SELECT c.* FROM cases c WHERE c.id NOT IN ('daily','nft-mini','crate-blue','crate-orange','legend') ORDER BY c.sort_order,c.created_at`),
       dbAll(db, 'SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 30'),
       dbAll(db, 'SELECT id,title,image_url,kind,value_stars FROM case_items ORDER BY title,id'),
-      dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,q.active,COALESCE(t.trigger_event,'manual') AS trigger_event FROM quests q LEFT JOIN quest_trigger_rules t ON t.quest_id=q.id ORDER BY q.id`)
+      dbAll(db, `SELECT q.id,q.title,q.description,q.target,q.reward_xp,q.active,COALESCE(t.trigger_event,'manual') AS trigger_event FROM quests q LEFT JOIN quest_trigger_rules t ON t.quest_id=q.id ORDER BY q.id`),
+      dbAll(db, `SELECT o.*,ci.title AS reward_item_title FROM limited_offers o LEFT JOIN case_items ci ON ci.id=o.reward_item_id ORDER BY o.created_at DESC LIMIT 50`),
+      dbAll(db, `SELECT id,message_text,status,recipient_count,sent_count,failed_count,created_at,updated_at FROM admin_broadcasts ORDER BY created_at DESC LIMIT 10`),
+      dbAll(db, 'SELECT id,admin_telegram_id,action,details,created_at FROM admin_audit_log ORDER BY created_at DESC LIMIT 30')
     ]);
     const detailedCases = await Promise.all(cases.map(async c => ({
       ...c,
       items: await dbAll(db, 'SELECT id,title,image_url,kind,value_stars,weight,stock_limit,awarded_count FROM case_items WHERE case_id=? ORDER BY created_at,id', c.id)
     })));
     const event = await dbFirst(db, 'SELECT * FROM event_settings WHERE id=1') || { id:1,enabled:0,event_type:'battle_pass',title:'Halloween Pass',ends_at:null,premium_price_xtr:PREMIUM_PASS_PRICE };
-    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests });
+    return json(res, 200, { ok:true, userCount:userCount?.n || 0, orders, withdrawals, cases:detailedCases, promos, event, rewardCatalog, quests, offers, broadcasts, auditLogs });
+  });
+
+  // Create or update a time-limited offer. Price is paid with internal app credits (★), not Telegram Stars.
+  app.post('/api/admin/offers', requireAdmin, async (req, res) => {
+    const db=dbOf(req); const body=req.body||{};
+    const title=String(body.title||'').trim().slice(0,70); const description=String(body.description||'').trim().slice(0,220);
+    const imageUrl=normalizeImageUrl(body.imageUrl||'gift-box.png')||'gift-box.png';
+    const price=adminInteger(body.priceCredits,0,1000000);
+    const startsAtRaw=String(body.startsAt||''); const endsAtRaw=String(body.endsAt||'');
+    const startsMs=Date.parse(startsAtRaw); const endsMs=Date.parse(endsAtRaw);
+    const maxRaw=body.maxPurchases; const maxPurchases=maxRaw===''||maxRaw===null||maxRaw===undefined?null:adminInteger(maxRaw,1,100000000);
+    const perUserRaw=body.perUserLimit; const perUserLimit=perUserRaw===''||perUserRaw===null||perUserRaw===undefined?1:adminInteger(perUserRaw,1,1000000);
+    const rewardItemId=String(body.rewardItemId||'').trim()||null; const rewardCredits=body.rewardCredits===''||body.rewardCredits===null||body.rewardCredits===undefined?0:adminInteger(body.rewardCredits,0,1000000);
+    const active=body.active?1:0;
+    if(title.length<3) return fail(res,400,'Название предложения должно содержать минимум 3 символа');
+    if(price===null) return fail(res,400,'Цена должна быть целым числом от 0 до 1 000 000 внутренних кредитов');
+    if(!Number.isFinite(startsMs)||!Number.isFinite(endsMs)||startsMs>=endsMs) return fail(res,400,'Укажи корректные дату начала и дату окончания; окончание должно быть позже начала');
+    if(maxRaw!==''&&maxRaw!==null&&maxRaw!==undefined&&maxPurchases===null) return fail(res,400,'Общий лимит должен быть от 1 до 100 000 000');
+    if(perUserLimit===null) return fail(res,400,'Лимит на игрока должен быть от 1 до 1 000 000');
+    if(rewardCredits===null) return fail(res,400,'Бонусные кредиты должны быть от 0 до 1 000 000');
+    if(!rewardItemId&&rewardCredits<1) return fail(res,400,'Добавь награду: выбери подарок или укажи бонусные кредиты');
+    if(rewardItemId&&!await dbFirst(db,'SELECT id FROM case_items WHERE id=?',rewardItemId)) return fail(res,404,'Выбранный предмет не найден');
+    const offerId=String(body.id||'').trim()||`offer-${id()}`;
+    if(body.id){
+      const current=await dbFirst(db,'SELECT id,sold_count FROM limited_offers WHERE id=?',offerId);
+      if(!current) return fail(res,404,'Предложение не найдено');
+      if(maxPurchases!==null&&maxPurchases<Number(current.sold_count||0)) return fail(res,400,'Общий лимит не может быть меньше уже проданного количества');
+      await dbRun(db,`UPDATE limited_offers SET title=?,description=?,image_url=?,price_credits=?,starts_at=?,ends_at=?,max_purchases=?,per_user_limit=?,reward_item_id=?,reward_credits=?,active=?,updated_at=? WHERE id=?`,title,description,imageUrl,price,new Date(startsMs).toISOString(),new Date(endsMs).toISOString(),maxPurchases,perUserLimit,rewardItemId,rewardCredits,active,nowIso(),offerId);
+    } else {
+      await dbRun(db,`INSERT INTO limited_offers(id,title,description,image_url,price_credits,starts_at,ends_at,max_purchases,per_user_limit,sold_count,reward_item_id,reward_credits,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?, ?,?)`,offerId,title,description,imageUrl,price,new Date(startsMs).toISOString(),new Date(endsMs).toISOString(),maxPurchases,perUserLimit,rewardItemId,rewardCredits,active,nowIso(),nowIso());
+    }
+    const offer=await dbFirst(db,'SELECT o.*,ci.title AS reward_item_title FROM limited_offers o LEFT JOIN case_items ci ON ci.id=o.reward_item_id WHERE o.id=?',offerId);
+    return json(res,200,{ok:true,offer,message:body.id?'Предложение сохранено':'Предложение создано'});
+  });
+
+  app.patch('/api/admin/offers/:offerId/status', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const active=req.body?.active?1:0; const offerId=String(req.params.offerId||'');
+    const result=await dbRun(db,'UPDATE limited_offers SET active=?,updated_at=? WHERE id=?',active,nowIso(),offerId);
+    if((result.meta?.changes||0)===0) return fail(res,404,'Предложение не найдено');
+    return json(res,200,{ok:true,active:!!active,message:active?'Предложение включено':'Предложение отключено'});
+  });
+
+  app.post('/api/admin/broadcasts', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const messageText=String(req.body?.message||'').trim(); const withAppButton=req.body?.withAppButton?1:0;
+    if(messageText.length<2) return fail(res,400,'Напиши текст рассылки');
+    if(messageText.length>3500) return fail(res,400,'Текст рассылки должен быть не длиннее 3500 символов');
+    const activeBroadcast=await dbFirst(db,`SELECT id FROM admin_broadcasts WHERE status='sending' LIMIT 1`);
+    if(activeBroadcast) return fail(res,409,'Уже идёт другая рассылка. Продолжи или заверши её прежде, чем создавать новую.');
+    const count=Number((await dbFirst(db,'SELECT COUNT(*) AS n FROM users'))?.n||0);
+    if(count<1) return fail(res,409,'В базе пока нет зарегистрированных игроков');
+    const broadcastId=id(); const timestamp=nowIso();
+    await dbRun(db,`INSERT INTO admin_broadcasts(id,message_text,with_app_button,status,recipient_count,sent_count,failed_count,created_at,updated_at) VALUES(?,?,?,'sending',?,0,0,?,?)`,broadcastId,messageText,withAppButton,count,timestamp,timestamp);
+    await dbRun(db,`INSERT OR IGNORE INTO admin_broadcast_recipients(broadcast_id,telegram_id,status) SELECT ?,telegram_id,'pending' FROM users`,broadcastId);
+    const actual=Number((await dbFirst(db,'SELECT COUNT(*) AS n FROM admin_broadcast_recipients WHERE broadcast_id=?',broadcastId))?.n||0);
+    await dbRun(db,'UPDATE admin_broadcasts SET recipient_count=?,status=?,updated_at=? WHERE id=?',actual,actual?'sending':'completed',nowIso(),broadcastId);
+    return json(res,200,{ok:true,broadcastId,recipientCount:actual,status:actual?'sending':'completed',message:`Рассылка создана для ${actual} пользователей. Начинаю отправку небольшими пакетами.`});
+  });
+
+  app.post('/api/admin/broadcasts/:broadcastId/process', requireAdmin, async (req,res)=>{
+    const db=dbOf(req); const env=envOf(req); const broadcastId=String(req.params.broadcastId||'');
+    const broadcast=await dbFirst(db,'SELECT * FROM admin_broadcasts WHERE id=?',broadcastId);
+    if(!broadcast) return fail(res,404,'Рассылка не найдена');
+    if(broadcast.status==='completed') return json(res,200,{ok:true,status:'completed',sent:Number(broadcast.sent_count||0),failed:Number(broadcast.failed_count||0),remaining:0});
+    const recipients=await dbAll(db,`SELECT telegram_id FROM admin_broadcast_recipients WHERE broadcast_id=? AND status='pending' ORDER BY telegram_id LIMIT 10`,broadcastId);
+    for(const recipient of recipients){
+      try{
+        const replyMarkup=Number(broadcast.with_app_button)===1&&env.PUBLIC_APP_URL?{inline_keyboard:[[{text:'🎁 Открыть GiftCase',web_app:{url:env.PUBLIC_APP_URL}}]]}:undefined;
+        await telegramCall(env,'sendMessage',{chat_id:recipient.telegram_id,text:broadcast.message_text,...(replyMarkup?{reply_markup:replyMarkup}:{})});
+        await dbRun(db,`UPDATE admin_broadcast_recipients SET status='sent',sent_at=? WHERE broadcast_id=? AND telegram_id=? AND status='pending'`,nowIso(),broadcastId,recipient.telegram_id);
+      }catch(err){
+        await dbRun(db,`UPDATE admin_broadcast_recipients SET status='failed',error_text=?,sent_at=? WHERE broadcast_id=? AND telegram_id=? AND status='pending'`,String(err?.message||'Telegram delivery failed').slice(0,180),nowIso(),broadcastId,recipient.telegram_id);
+      }
+    }
+    const counts=await dbFirst(db,`SELECT SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) AS sent,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending FROM admin_broadcast_recipients WHERE broadcast_id=?`,broadcastId);
+    const status=Number(counts?.pending||0)>0?'sending':'completed';
+    await dbRun(db,'UPDATE admin_broadcasts SET sent_count=?,failed_count=?,status=?,updated_at=? WHERE id=?',Number(counts?.sent||0),Number(counts?.failed||0),status,nowIso(),broadcastId);
+    return json(res,200,{ok:true,status,sent:Number(counts?.sent||0),failed:Number(counts?.failed||0),remaining:Number(counts?.pending||0),batchProcessed:recipients.length});
   });
 
   app.post('/api/admin/cases', requireAdmin, async (req, res) => {

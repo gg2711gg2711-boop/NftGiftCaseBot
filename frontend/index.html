@@ -11,7 +11,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://telegram.org/js/telegram-web-app.js?64"></script>
-  <link rel="stylesheet" href="./styles.css?v=20261022-subscription-avatar5" />
+  <link rel="stylesheet" href="./styles.css?v=20261023-offers-broadcasts1" />
 </head>
 <body>
   <div class="app-shell">
@@ -68,6 +68,11 @@
         </div>
         <div id="search-box" class="search-box hidden"><input id="search-input" type="search" placeholder="Название кейса или предмета" /><button id="search-close" class="text-btn">Закрыть</button></div>
 
+        <section id="home-offers-section" class="home-offers-section hidden" aria-label="Ограниченные предложения">
+          <div class="section-heading"><div><p class="eyebrow">LIMITED DROP</p><h2>Ограниченные предложения</h2></div><button class="text-btn" data-jump="shop">Все предложения →</button></div>
+          <div id="home-offers-grid" class="home-offers-grid"></div>
+        </section>
+
         <div class="section-heading"><h1>Бесплатные</h1><button class="text-btn" data-jump="inventory">Мои предметы <svg viewBox="0 0 24 24"><path d="M5 12h13m-5-5 5 5-5 5"/></svg></button></div>
         <div id="free-grid" class="case-grid"></div>
 
@@ -92,6 +97,13 @@
           <div class="promo-form"><input id="promo-input" maxlength="32" placeholder="Введите код" /><button id="promo-redeem" class="small-primary">Применить</button></div>
         </div>
         <div class="panel referral-panel"><div><span class="eyebrow">REFERRAL PROGRAM</span><h3>Пригласите друга</h3><p>Получайте процент от его покупок в виде внутренних кредитов приложения.</p></div><button id="referral-share" class="small-primary">Пригласить</button></div>
+      </section>
+
+      <section id="shop-view" class="view">
+        <div class="page-title-row"><div><p class="eyebrow">LIMITED DROP</p><h1>Магазин предложений</h1></div><span class="admin-badge">LIMITED</span></div>
+        <div class="panel shop-intro"><strong>⏳ Только ограниченное время</strong><p>Наборы исчезают по окончании срока или после исчерпания лимита. Покупка списывает внутренние кредиты GiftCase ★, а не Telegram Stars.</p></div>
+        <div id="shop-offers-grid" class="shop-offers-grid"></div>
+        <div id="shop-offers-empty" class="empty-state hidden"><div class="empty-icon">🎁</div><h3>Пока нет предложений</h3><p>Загляни позже — здесь появятся специальные наборы.</p><button class="secondary-btn" data-jump="home">На главную</button></div>
       </section>
 
       <section id="case-view" class="view">
@@ -218,6 +230,34 @@
         <div class="panel admin-panel event-reward-panel"><h2>🎁 Редактор наград событий</h2><p class="muted-note">Настраивай награду каждого уровня Halloween Pass или дня адвент-календаря. Тип награды — подарок либо внутренние кредиты ★. Это валюта приложения, не перевод настоящих Telegram Stars.</p><label>Событие<select id="admin-reward-event-type"><option value="battle_pass">Halloween Pass / Battle Pass</option><option value="advent">Адвент-календарь</option></select></label><label>Ветка наград<select id="admin-reward-branch"><option value="free">FREE — бесплатная</option><option value="premium">PREMIUM</option></select></label><label id="admin-reward-level-label">Уровень (1–30)<input id="admin-reward-level" type="number" min="1" max="30" value="1" /></label><label>Тип награды<select id="admin-event-reward-type"><option value="gift">🎁 Подарок</option><option value="credits">★ Внутренние кредиты</option></select></label><div id="admin-event-gift-wrap"><label>Подарок для награды<select id="admin-event-reward-item"><option value="">Загрузка каталога…</option></select></label></div><div id="admin-event-amount-wrap" class="hidden"><label>Количество внутренних кредитов ★<input id="admin-event-reward-amount" type="number" min="1" max="1000000" value="100" /></label></div><div id="admin-reward-preview" class="reward-editor-preview muted-note">Выбери уровень и тип награды.</div><button id="admin-save-event-reward" class="small-primary">Сохранить награду</button></div>
         <div class="panel admin-panel quest-manager-panel"><h2>🧩 Редактор квестов</h2><p class="muted-note">Выбирай квест для изменения или заполни поля для нового. Прогресс игроков при редактировании сохраняется.</p><label>Изменить существующий квест<select id="admin-quest-select"><option value="">Новый квест…</option></select></label><label>ID квеста<input id="admin-quest-id" maxlength="40" placeholder="например, open_10" /></label><label>Название<input id="admin-quest-title" maxlength="80" placeholder="Откройте 10 кейсов" /></label><label>Описание<textarea id="admin-quest-description" maxlength="220" rows="2" placeholder="Коротко опишите задание"></textarea></label><div class="form-grid"><label>Цель, действий<input id="admin-quest-target" type="number" min="1" value="1" /></label><label>Награда XP<input id="admin-quest-xp" type="number" min="1" value="25" /></label></div><label>Как выполняется квест<select id="admin-quest-trigger"><option value="case_open">Открытие кейса</option><option value="daily_claim">Ежедневный подарок</option><option value="referral">Приглашение друга</option><option value="manual">Без автоматического прогресса</option></select></label><label class="toggle-row"><span>Квест активен</span><input id="admin-quest-active" type="checkbox" checked /></label><button id="admin-quest-save" class="small-primary">Сохранить квест</button></div>
         <div class="panel admin-panel admin-abuse-panel"><h2>💥 Admin Abuse · раздача всем</h2><p class="muted-note">Одно действие для всех зарегистрированных игроков. Можно выдать всем выбранный подарок, начислить внутренние кредиты каждому или сделать оба действия. Перед отправкой будет подтверждение.</p><label>Подарок для всех<select id="admin-global-reward-item"><option value="">Не выдавать подарок</option></select></label><label>Кредиты каждому игроку ★<input id="admin-global-reward-amount" type="number" min="1" max="1000000" placeholder="Пусто — не начислять" /></label><button id="admin-global-reward-send" class="small-primary">💥 Раздать всем игрокам</button></div>
+        <div class="panel admin-panel offer-admin-panel">
+          <h2>⏳ Магазин ограниченных предложений</h2>
+          <p class="muted-note">Создавай временные наборы. Укажи период, общий лимит, лимит на одного игрока и награду: подарок, внутренние кредиты или оба варианта. Цена списывается с внутреннего баланса ★.</p>
+          <input id="admin-offer-id" type="hidden" />
+          <label>Название предложения<input id="admin-offer-title" maxlength="70" placeholder="Например, Golden Starter Pack" /></label>
+          <label>Описание<textarea id="admin-offer-description" maxlength="220" rows="2" placeholder="Что входит в набор и почему он особенный"></textarea></label>
+          <div class="form-grid"><label>Обложка<select id="admin-offer-image"><option value="gift-box.png">GiftCase</option><option value="case-rich.png">Rich Case</option><option value="case-durov.png">Durov Case</option><option value="case-halloween.png">Halloween</option><option value="case-daily.png">Daily</option><option value="nft-swan.png">NFT Swan</option><option value="ring.png">Blue Ring</option></select></label><label>Цена, внутренние ★<input id="admin-offer-price" type="number" min="0" max="1000000" value="100" /></label></div>
+          <div class="form-grid"><label>Начало предложения<input id="admin-offer-start" type="datetime-local" required /></label><label>Окончание предложения<input id="admin-offer-end" type="datetime-local" required /></label></div>
+          <div class="form-grid"><label>Общий лимит покупок<input id="admin-offer-max" type="number" min="1" max="100000000" placeholder="Пусто — без лимита" /></label><label>Лимит на игрока<input id="admin-offer-per-user" type="number" min="1" max="1000000" value="1" /></label></div>
+          <label>Предмет в наборе<select id="admin-offer-reward-item"><option value="">Не выдавать предмет</option></select></label>
+          <label>Бонусные внутренние кредиты ★<input id="admin-offer-reward-credits" type="number" min="0" max="1000000" value="0" /></label>
+          <label class="toggle-row"><span>Предложение активно (по расписанию)</span><input id="admin-offer-active" type="checkbox" checked /></label>
+          <div class="button-row"><button id="admin-offer-save" class="small-primary">Создать предложение</button><button id="admin-offer-reset" class="secondary-btn">Очистить</button></div>
+          <div class="global-admin-divider"></div><h3 class="admin-subheading">Созданные предложения</h3><div id="admin-offers-list" class="admin-list muted-note">Предложения загрузятся после подключения базы.</div>
+        </div>
+
+        <div class="panel admin-panel broadcast-admin-panel">
+          <h2>📣 Рассылка игрокам через бота</h2>
+          <p class="muted-note">Сообщение будет отправлено в личный чат каждому зарегистрированному игроку, который ещё может получать сообщения от бота. Telegram может не доставить сообщения тем, кто заблокировал бота. Рассылка идёт пакетами и её можно продолжить позже.</p>
+          <label>Текст рассылки<textarea id="admin-broadcast-text" maxlength="3500" rows="5" placeholder="🎁 В GiftCase вышло обновление! Заходи посмотреть новые предложения…"></textarea></label>
+          <label class="toggle-row"><span>Добавить кнопку «Открыть GiftCase»</span><input id="admin-broadcast-button" type="checkbox" checked /></label>
+          <button id="admin-broadcast-send" class="small-primary">📨 Начать рассылку</button>
+          <div id="admin-broadcast-progress" class="muted-note" aria-live="polite"></div>
+          <div class="global-admin-divider"></div><h3 class="admin-subheading">История рассылок</h3><div id="admin-broadcasts-list" class="admin-list muted-note">Рассылок пока нет.</div>
+        </div>
+
+        <div class="panel admin-panel audit-admin-panel"><h2>🧾 Журнал действий администратора</h2><p class="muted-note">Здесь сохраняются успешные изменения админ-панели: кто и какой раздел менял, и когда это было.</p><div id="admin-audit-list" class="admin-list muted-note">Записей пока нет.</div></div>
+
         <div class="panel admin-panel"><h2>📦 Последние заявки на вывод</h2><div id="admin-withdrawals" class="admin-list muted-note">Данные загрузятся после входа администратора.</div><p class="muted-note">Подтверждение в уведомлении отмечает заявку обработанной. Сам подарок администратор передаёт игроку вручную. При отказе предмет возвращается в инвентарь.</p></div>
         <div class="panel admin-panel"><h2>Последние заказы</h2><div id="admin-orders" class="admin-list muted-note">Данные загрузятся после входа администратора.</div></div>
       </section>
@@ -225,6 +265,7 @@
 
     <nav class="bottom-nav" aria-label="Главное меню">
       <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 10 12 3l8 7v10H4V10Z"/><path d="M9 20v-6h6v6"/></svg></span><span>Игры</span></button>
+      <button class="nav-item shop-nav" data-view="shop"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 9h16l-1 12H5L4 9Z"/><path d="M8 9a4 4 0 0 1 8 0M12 13v4m-2-2h4"/></svg></span><span>Магазин</span></button>
       <button class="nav-item" data-view="cases"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z"/><path d="m4.5 7.7 7.5 4.4 7.5-4.4M12 12v9"/></svg></span><span>Кейсы</span></button>
       <button class="nav-item" data-view="upgrade"><span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 3v4m0 10v4M3 12h4m10 0h4M5.6 5.6l2.8 2.8m7.2 7.2 2.8 2.8m0-12.8-2.8 2.8m-7.2 7.2-2.8 2.8"/><circle cx="12" cy="12" r="5"/></svg></span><span>Апгрейд</span></button>
       <button id="admin-nav-item" class="nav-item admin-nav-item hidden" data-view="admin" aria-label="Админ-панель"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.2-8 10-4.6-1.8-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg></span><span>Админ</span></button>
@@ -237,8 +278,8 @@
   <div id="modal-root" class="modal-root hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-backdrop" data-close-modal></div><div class="modal-card"><button class="modal-close icon-btn" data-close-modal aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button><div id="modal-content"></div></div></div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
-  <script src="./config.js?v=20261022-subscription-avatar5"></script>
+  <script src="./config.js?v=20261023-offers-broadcasts1"></script>
   <script src="./gift-catalog.js"></script>
-  <script src="./app.js?v=20261022-subscription-avatar5" defer></script>
+  <script src="./app.js?v=20261023-offers-broadcasts1" defer></script>
 </body>
 </html>
